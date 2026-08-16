@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>examvm — investigation terminal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans+Thai:wght@400;500&display=swap');
+
+  :root{
+    --bg: #0c1210;
+    --panel: #10221c;
+    --chrome: #16332a;
+    --text: #baf7d0;
+    --text-dim: #6f9986;
+    --amber: #ffb454;
+    --red: #ff6b6b;
+    --border: #1e4536;
+    --cursor: #baf7d0;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: radial-gradient(ellipse at top, #0e1a15 0%, #060a08 70%);
+    font-family:'IBM Plex Sans Thai','JetBrains Mono',monospace;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh;
+  }
+  .wrap{
+    width: min(920px, 96vw);
+    height: min(640px, 92vh);
+    display:flex; flex-direction:column;
+    border-radius: 10px;
+    overflow:hidden;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.7), 0 0 0 1px var(--border);
+    background: var(--bg);
+  }
+  .titlebar{
+    background: var(--chrome);
+    padding: 10px 14px;
+    display:flex; align-items:center; gap:10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink:0;
+  }
+  .dots{ display:flex; gap:7px; }
+  .dot{ width:11px; height:11px; border-radius:50%; }
+  .dot.r{ background:#ff5f57; } .dot.y{ background:#febc2e; } .dot.g{ background:#28c840; }
+  .titletext{
+    flex:1; text-align:center;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px; color: var(--text-dim);
+    letter-spacing:0.03em;
+  }
+  .term{
+    flex:1; overflow-y:auto;
+    padding: 16px 18px 8px;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+    position:relative;
+  }
+  .term::before{
+    content:"";
+    position:absolute; inset:0;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    pointer-events:none;
+  }
+  .line{ white-space:pre-wrap; word-break:break-word; }
+  .prompt-line{ display:flex; gap:6px; flex-wrap:wrap; }
+  .ps-user{ color:#7dd3fc; }
+  .ps-at{ color: var(--text-dim); }
+  .ps-host{ color:#7dd3fc; }
+  .ps-path{ color: var(--amber); }
+  .ps-dollar{ color: var(--text-dim); margin-right:2px; }
+  .cmd-echo{ color: var(--text); }
+  .out-dim{ color: var(--text-dim); }
+  .out-err{ color: var(--red); }
+  .out-file{ color:#7dd3fc; }
+  .out-dir{ color: var(--amber); font-weight:700; }
+  .match{ background: rgba(255,180,84,0.18); color:var(--amber); border-radius:2px; padding:0 1px;}
+  .inputbar{
+    border-top:1px solid var(--border);
+    background: rgba(255,255,255,0.015);
+    display:flex; align-items:center; gap:8px;
+    padding: 10px 18px;
+    flex-shrink:0;
+  }
+  .inputbar .static-prompt{ font-family:'JetBrains Mono',monospace; font-size:13.5px; white-space:nowrap; }
+  input#cmdInput{
+    flex:1; background:transparent; border:none; outline:none;
+    color: var(--text); font-family:'JetBrains Mono',monospace; font-size:13.5px;
+    caret-color: var(--cursor);
+  }
+  input#cmdInput::placeholder{ color: rgba(186,247,208,0.25); }
+  .term::-webkit-scrollbar{ width:10px; }
+  .term::-webkit-scrollbar-thumb{ background: var(--border); border-radius:6px; }
+  .hint{
+    font-size:11px; color: var(--text-dim); padding: 0 18px 10px; font-family:'JetBrains Mono',monospace;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="titlebar">
+    <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+    <div class="titletext" id="titletext">student@examvm: ~</div>
+  </div>
+  <div class="term" id="term"></div>
+  <div class="inputbar">
+    <span class="static-prompt"><span class="ps-user">student</span><span class="ps-at">@</span><span class="ps-host">examvm</span><span class="ps-dollar">:</span><span class="ps-path" id="pathLabel">~</span><span class="ps-dollar">$</span></span>
+    <input id="cmdInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="พิมพ์คำสั่ง Linux ที่นี่..." autofocus>
+  </div>
+  <div class="hint">Practical Lab — Log Analysis · vm: examvm · user: student · ไฟล์อยู่ใน ~/investigation/logs/</div>
+</div>
+<script>
+const LOG_FILES = {"auth.log": "Aug 9 06:06:00 app-prod01 sshd[3019]: Accepted publickey for svc_report from 10.0.8.5 port 51737 ssh2: RSA SHA256:b8e85cedf472\nAug 9 06:06:01 app-prod01 sshd[3019]: pam_unix(sshd:session): session opened for user svc_report by (uid=0)\nAug 9 06:10:00 app-prod01 sshd[1816]: Invalid user postgres from 203.0.113.5 port 37314\nAug 9 06:10:01 app-prod01 sshd[1816]: Failed password for invalid user postgres from 203.0.113.5 port 34572 ssh2\nAug 9 06:10:02 app-prod01 sshd[1816]: Connection closed by invalid user postgres 203.0.113.5 port 54132 [preauth]\nAug 9 06:11:00 app-prod01 sshd[3019]: pam_unix(sshd:session): session closed for user svc_report\nAug 9 06:17:00 app-prod01 sshd[3047]: Accepted publickey for admin from 10.0.5.11 port 57176 ssh2: RSA SHA256:ea64e520ab88\nAug 9 06:17:01 app-prod01 sshd[3047]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 9 06:19:00 app-prod01 sshd[1822]: Invalid user ftpuser from 141.98.10.55 port 49349\nAug 9 06:19:01 app-prod01 sshd[1822]: Failed password for invalid user ftpuser from 141.98.10.55 port 43825 ssh2\nAug 9 06:19:02 app-prod01 sshd[1822]: Connection closed by invalid user ftpuser 141.98.10.55 port 31041 [preauth]\nAug 9 06:23:00 app-prod01 sshd[1837]: Invalid user git from 203.0.113.5 port 46559\nAug 9 06:23:01 app-prod01 sshd[1837]: Failed password for invalid user git from 203.0.113.5 port 49726 ssh2\nAug 9 06:23:02 app-prod01 sshd[1837]: Connection closed by invalid user git 203.0.113.5 port 30869 [preauth]\nAug 9 06:26:00 app-prod01 sshd[3085]: Accepted publickey for backup_svc from 10.0.8.5 port 48105 ssh2: RSA SHA256:cce8678ddb68\nAug 9 06:26:01 app-prod01 sshd[3085]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 9 06:22:00 app-prod01 sshd[3047]: pam_unix(sshd:session): session closed for user admin\nAug 9 06:31:00 app-prod01 sshd[3085]: pam_unix(sshd:session): session closed for user backup_svc\nAug 9 07:01:00 app-prod01 sshd[1864]: Invalid user ftpuser from 203.0.113.9 port 37223\nAug 9 07:01:01 app-prod01 sshd[1864]: Failed password for invalid user ftpuser from 203.0.113.9 port 44719 ssh2\nAug 9 07:01:02 app-prod01 sshd[1864]: Connection closed by invalid user ftpuser 203.0.113.9 port 49309 [preauth]\nAug 9 07:21:00 app-prod01 sshd[1892]: Invalid user ubuntu from 203.0.113.5 port 41149\nAug 9 07:21:01 app-prod01 sshd[1892]: Failed password for invalid user ubuntu from 203.0.113.5 port 39105 ssh2\nAug 9 07:21:02 app-prod01 sshd[1892]: Connection closed by invalid user ubuntu 203.0.113.5 port 35094 [preauth]\nAug 9 07:37:00 app-prod01 sshd[1898]: Invalid user oracle from 45.33.12.20 port 42449\nAug 9 07:37:01 app-prod01 sshd[1898]: Failed password for invalid user oracle from 45.33.12.20 port 33169 ssh2\nAug 9 07:37:02 app-prod01 sshd[1898]: Connection closed by invalid user oracle 45.33.12.20 port 41763 [preauth]\nAug 9 07:50:00 app-prod01 sshd[3101]: Accepted publickey for jsmith from 10.0.5.22 port 58331 ssh2: RSA SHA256:c6c0c86045dc\nAug 9 07:50:01 app-prod01 sshd[3101]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 9 08:02:00 app-prod01 sshd[1901]: Invalid user postgres from 89.248.165.32 port 53911\nAug 9 08:02:01 app-prod01 sshd[1901]: Failed password for invalid user postgres from 89.248.165.32 port 45054 ssh2\nAug 9 08:02:02 app-prod01 sshd[1901]: Connection closed by invalid user postgres 89.248.165.32 port 47571 [preauth]\nAug 9 07:55:00 app-prod01 sshd[3101]: pam_unix(sshd:session): session closed for user jsmith\nAug 9 08:08:00 app-prod01 sshd[3104]: Accepted publickey for mysql_bkp from 10.0.8.5 port 58134 ssh2: RSA SHA256:1d8f77d40eb6\nAug 9 08:08:01 app-prod01 sshd[3104]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 9 08:12:00 app-prod01 sshd[1937]: Invalid user oracle from 185.220.101.4 port 39606\nAug 9 08:12:01 app-prod01 sshd[1937]: Failed password for invalid user oracle from 185.220.101.4 port 57177 ssh2\nAug 9 08:12:02 app-prod01 sshd[1937]: Connection closed by invalid user oracle 185.220.101.4 port 50599 [preauth]\nAug 9 08:13:00 app-prod01 sshd[3104]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 9 08:38:00 app-prod01 sshd[1942]: Invalid user git from 89.248.165.32 port 31501\nAug 9 08:38:01 app-prod01 sshd[1942]: Failed password for invalid user git from 89.248.165.32 port 51668 ssh2\nAug 9 08:38:02 app-prod01 sshd[1942]: Connection closed by invalid user git 89.248.165.32 port 37467 [preauth]\nAug 9 08:59:00 app-prod01 sshd[1949]: Invalid user git from 203.0.113.5 port 42455\nAug 9 08:59:01 app-prod01 sshd[1949]: Failed password for invalid user git from 203.0.113.5 port 39108 ssh2\nAug 9 08:59:02 app-prod01 sshd[1949]: Connection closed by invalid user git 203.0.113.5 port 44857 [preauth]\nAug 9 09:25:00 app-prod01 sshd[1972]: Invalid user pi from 203.0.113.9 port 36865\nAug 9 09:25:01 app-prod01 sshd[1972]: Failed password for invalid user pi from 203.0.113.9 port 51960 ssh2\nAug 9 09:25:02 app-prod01 sshd[1972]: Connection closed by invalid user pi 203.0.113.9 port 38748 [preauth]\nAug 9 09:32:00 app-prod01 sshd[2007]: Invalid user ubuntu from 89.248.165.32 port 53892\nAug 9 09:32:01 app-prod01 sshd[2007]: Failed password for invalid user ubuntu from 89.248.165.32 port 38021 ssh2\nAug 9 09:32:02 app-prod01 sshd[2007]: Connection closed by invalid user ubuntu 89.248.165.32 port 35354 [preauth]\nAug 9 09:35:00 app-prod01 sshd[3130]: Accepted publickey for svc_report from 10.0.8.5 port 52266 ssh2: RSA SHA256:929b9c9eb05f\nAug 9 09:35:01 app-prod01 sshd[3130]: pam_unix(sshd:session): session opened for user svc_report by (uid=0)\nAug 9 09:40:00 app-prod01 sshd[3130]: pam_unix(sshd:session): session closed for user svc_report\nAug 9 10:04:00 app-prod01 sshd[2043]: Invalid user postgres from 185.220.101.4 port 37196\nAug 9 10:04:01 app-prod01 sshd[2043]: Failed password for invalid user postgres from 185.220.101.4 port 52433 ssh2\nAug 9 10:04:02 app-prod01 sshd[2043]: Connection closed by invalid user postgres 185.220.101.4 port 40626 [preauth]\nAug 9 10:10:00 app-prod01 sshd[2064]: Invalid user test from 203.0.113.9 port 43145\nAug 9 10:10:01 app-prod01 sshd[2064]: Failed password for invalid user test from 203.0.113.9 port 38773 ssh2\nAug 9 10:10:02 app-prod01 sshd[2064]: Connection closed by invalid user test 203.0.113.9 port 32168 [preauth]\nAug 9 10:26:00 app-prod01 sshd[2078]: Invalid user pi from 89.248.165.32 port 51477\nAug 9 10:26:01 app-prod01 sshd[2078]: Failed password for invalid user pi from 89.248.165.32 port 46358 ssh2\nAug 9 10:26:02 app-prod01 sshd[2078]: Connection closed by invalid user pi 89.248.165.32 port 42964 [preauth]\nAug 9 10:45:00 app-prod01 sshd[3155]: Accepted publickey for admin from 10.0.5.11 port 59474 ssh2: RSA SHA256:3e5a82554fb4\nAug 9 10:45:01 app-prod01 sshd[3155]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 9 10:50:00 app-prod01 sshd[3155]: pam_unix(sshd:session): session closed for user admin\nAug 9 10:58:00 app-prod01 sshd[2087]: Invalid user postgres from 203.0.113.9 port 38081\nAug 9 10:58:01 app-prod01 sshd[2087]: Failed password for invalid user postgres from 203.0.113.9 port 54411 ssh2\nAug 9 10:58:02 app-prod01 sshd[2087]: Connection closed by invalid user postgres 203.0.113.9 port 48394 [preauth]\nAug 9 11:35:00 app-prod01 sshd[2115]: Invalid user hadoop from 45.33.12.20 port 59419\nAug 9 11:35:01 app-prod01 sshd[2115]: Failed password for invalid user hadoop from 45.33.12.20 port 49121 ssh2\nAug 9 11:35:02 app-prod01 sshd[2115]: Connection closed by invalid user hadoop 45.33.12.20 port 43087 [preauth]\nAug 9 12:01:00 app-prod01 sshd[2148]: Invalid user ubuntu from 203.0.113.9 port 46171\nAug 9 12:01:01 app-prod01 sshd[2148]: Failed password for invalid user ubuntu from 203.0.113.9 port 32978 ssh2\nAug 9 12:01:02 app-prod01 sshd[2148]: Connection closed by invalid user ubuntu 203.0.113.9 port 54765 [preauth]\nAug 9 12:07:00 app-prod01 sshd[2159]: Invalid user ubuntu from 203.0.113.5 port 55954\nAug 9 12:07:01 app-prod01 sshd[2159]: Failed password for invalid user ubuntu from 203.0.113.5 port 52298 ssh2\nAug 9 12:07:02 app-prod01 sshd[2159]: Connection closed by invalid user ubuntu 203.0.113.5 port 43833 [preauth]\nAug 9 12:09:00 app-prod01 sshd[3163]: Accepted publickey for backup_svc from 10.0.8.5 port 53584 ssh2: RSA SHA256:824f52d405c3\nAug 9 12:09:01 app-prod01 sshd[3163]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 9 12:14:00 app-prod01 sshd[2198]: Invalid user user from 185.220.101.4 port 45337\nAug 9 12:14:01 app-prod01 sshd[2198]: Failed password for invalid user user from 185.220.101.4 port 47338 ssh2\nAug 9 12:14:02 app-prod01 sshd[2198]: Connection closed by invalid user user 185.220.101.4 port 38238 [preauth]\nAug 9 12:14:00 app-prod01 sshd[3163]: pam_unix(sshd:session): session closed for user backup_svc\nAug 9 12:52:00 app-prod01 sshd[2233]: Invalid user oracle from 203.0.113.5 port 54604\nAug 9 12:52:01 app-prod01 sshd[2233]: Failed password for invalid user oracle from 203.0.113.5 port 38743 ssh2\nAug 9 12:52:02 app-prod01 sshd[2233]: Connection closed by invalid user oracle 203.0.113.5 port 55185 [preauth]\nAug 9 13:16:00 app-prod01 sshd[2261]: Invalid user postgres from 203.0.113.5 port 35182\nAug 9 13:16:01 app-prod01 sshd[2261]: Failed password for invalid user postgres from 203.0.113.5 port 44867 ssh2\nAug 9 13:16:02 app-prod01 sshd[2261]: Connection closed by invalid user postgres 203.0.113.5 port 30106 [preauth]\nAug 9 13:24:00 app-prod01 sshd[3183]: Accepted publickey for admin from 10.0.5.11 port 39401 ssh2: RSA SHA256:d63f1426954e\nAug 9 13:24:01 app-prod01 sshd[3183]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 9 13:35:00 app-prod01 sshd[2294]: Invalid user ubuntu from 89.248.165.32 port 59904\nAug 9 13:35:01 app-prod01 sshd[2294]: Failed password for invalid user ubuntu from 89.248.165.32 port 33486 ssh2\nAug 9 13:35:02 app-prod01 sshd[2294]: Connection closed by invalid user ubuntu 89.248.165.32 port 58525 [preauth]\nAug 9 13:29:00 app-prod01 sshd[3183]: pam_unix(sshd:session): session closed for user admin\nAug 9 13:57:00 app-prod01 sshd[2333]: Invalid user ftpuser from 141.98.10.55 port 36517\nAug 9 13:57:01 app-prod01 sshd[2333]: Failed password for invalid user ftpuser from 141.98.10.55 port 35008 ssh2\nAug 9 13:57:02 app-prod01 sshd[2333]: Connection closed by invalid user ftpuser 141.98.10.55 port 42252 [preauth]\nAug 9 14:10:00 app-prod01 sshd[2334]: Invalid user ftpuser from 89.248.165.32 port 49626\nAug 9 14:10:01 app-prod01 sshd[2334]: Failed password for invalid user ftpuser from 89.248.165.32 port 40621 ssh2\nAug 9 14:10:02 app-prod01 sshd[2334]: Connection closed by invalid user ftpuser 89.248.165.32 port 46010 [preauth]\nAug 9 14:14:00 app-prod01 sshd[2354]: Invalid user pi from 203.0.113.5 port 37846\nAug 9 14:14:01 app-prod01 sshd[2354]: Failed password for invalid user pi from 203.0.113.5 port 31898 ssh2\nAug 9 14:14:02 app-prod01 sshd[2354]: Connection closed by invalid user pi 203.0.113.5 port 37892 [preauth]\nAug 9 14:50:00 app-prod01 sshd[3205]: Accepted publickey for svc_report from 10.0.8.5 port 33060 ssh2: RSA SHA256:764ddad17b04\nAug 9 14:50:01 app-prod01 sshd[3205]: pam_unix(sshd:session): session opened for user svc_report by (uid=0)\nAug 9 14:53:00 app-prod01 sshd[2386]: Invalid user oracle from 203.0.113.5 port 56739\nAug 9 14:53:01 app-prod01 sshd[2386]: Failed password for invalid user oracle from 203.0.113.5 port 32267 ssh2\nAug 9 14:53:02 app-prod01 sshd[2386]: Connection closed by invalid user oracle 203.0.113.5 port 54923 [preauth]\nAug 9 14:55:00 app-prod01 sshd[3205]: pam_unix(sshd:session): session closed for user svc_report\nAug 9 15:14:00 app-prod01 sshd[3925]: Failed password for admin from 10.0.5.11 port 40210 ssh2\nAug 9 15:14:04 app-prod01 sshd[3925]: Failed password for admin from 10.0.5.11 port 40211 ssh2\nAug 9 15:14:10 app-prod01 sshd[3925]: Accepted password for admin from 10.0.5.11 port 40215 ssh2\nAug 9 15:14:11 app-prod01 sshd[3925]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 9 15:30:00 app-prod01 sshd[2417]: Invalid user ubuntu from 203.0.113.9 port 48015\nAug 9 15:30:01 app-prod01 sshd[2417]: Failed password for invalid user ubuntu from 203.0.113.9 port 35410 ssh2\nAug 9 15:30:02 app-prod01 sshd[2417]: Connection closed by invalid user ubuntu 203.0.113.9 port 38685 [preauth]\nAug 9 15:44:00 app-prod01 sshd[3231]: Accepted publickey for mysql_bkp from 10.0.8.5 port 37994 ssh2: RSA SHA256:c58786d65128\nAug 9 15:44:01 app-prod01 sshd[3231]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 9 15:49:00 app-prod01 sshd[3231]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 9 16:06:00 app-prod01 sshd[2431]: Invalid user user from 89.248.165.32 port 47671\nAug 9 16:06:01 app-prod01 sshd[2431]: Failed password for invalid user user from 89.248.165.32 port 54748 ssh2\nAug 9 16:06:02 app-prod01 sshd[2431]: Connection closed by invalid user user 89.248.165.32 port 53918 [preauth]\nAug 9 16:21:00 app-prod01 sshd[2457]: Invalid user postgres from 141.98.10.55 port 52009\nAug 9 16:21:01 app-prod01 sshd[2457]: Failed password for invalid user postgres from 141.98.10.55 port 51295 ssh2\nAug 9 16:21:02 app-prod01 sshd[2457]: Connection closed by invalid user postgres 141.98.10.55 port 42236 [preauth]\nAug 9 16:47:00 app-prod01 sshd[3261]: Accepted publickey for jsmith from 10.0.5.22 port 51875 ssh2: RSA SHA256:22f6178081c7\nAug 9 16:47:01 app-prod01 sshd[3261]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 9 16:52:00 app-prod01 sshd[2465]: Invalid user guest from 89.248.165.32 port 38123\nAug 9 16:52:01 app-prod01 sshd[2465]: Failed password for invalid user guest from 89.248.165.32 port 37362 ssh2\nAug 9 16:52:02 app-prod01 sshd[2465]: Connection closed by invalid user guest 89.248.165.32 port 32098 [preauth]\nAug 9 16:52:00 app-prod01 sshd[3261]: pam_unix(sshd:session): session closed for user jsmith\nAug 9 17:16:00 app-prod01 sshd[2501]: Invalid user hadoop from 203.0.113.5 port 37540\nAug 9 17:16:01 app-prod01 sshd[2501]: Failed password for invalid user hadoop from 203.0.113.5 port 49282 ssh2\nAug 9 17:16:02 app-prod01 sshd[2501]: Connection closed by invalid user hadoop 203.0.113.5 port 37216 [preauth]\nAug 9 17:19:00 app-prod01 sshd[2516]: Invalid user test from 203.0.113.5 port 32208\nAug 9 17:19:01 app-prod01 sshd[2516]: Failed password for invalid user test from 203.0.113.5 port 59668 ssh2\nAug 9 17:19:02 app-prod01 sshd[2516]: Connection closed by invalid user test 203.0.113.5 port 31029 [preauth]\nAug 9 17:25:00 app-prod01 sshd[3279]: Accepted publickey for jsmith from 10.0.5.22 port 55094 ssh2: RSA SHA256:61d15df8bc0c\nAug 9 17:25:01 app-prod01 sshd[3279]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 9 17:30:00 app-prod01 sshd[3279]: pam_unix(sshd:session): session closed for user jsmith\nAug 9 17:38:00 app-prod01 sshd[3306]: Accepted publickey for mysql_bkp from 10.0.8.5 port 40842 ssh2: RSA SHA256:20d0835760af\nAug 9 17:38:01 app-prod01 sshd[3306]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 9 17:43:00 app-prod01 sshd[2532]: Invalid user ftpuser from 203.0.113.5 port 39125\nAug 9 17:43:01 app-prod01 sshd[2532]: Failed password for invalid user ftpuser from 203.0.113.5 port 51921 ssh2\nAug 9 17:43:02 app-prod01 sshd[2532]: Connection closed by invalid user ftpuser 203.0.113.5 port 45906 [preauth]\nAug 9 17:43:00 app-prod01 sshd[3306]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 9 17:59:00 app-prod01 sshd[2569]: Invalid user ubuntu from 89.248.165.32 port 48881\nAug 9 17:59:01 app-prod01 sshd[2569]: Failed password for invalid user ubuntu from 89.248.165.32 port 45488 ssh2\nAug 9 17:59:02 app-prod01 sshd[2569]: Connection closed by invalid user ubuntu 89.248.165.32 port 37962 [preauth]\nAug 9 18:32:00 app-prod01 sshd[2576]: Invalid user git from 185.220.101.4 port 33176\nAug 9 18:32:00 app-prod01 sshd[3341]: Accepted publickey for mysql_bkp from 10.0.8.5 port 54494 ssh2: RSA SHA256:5681e1046578\nAug 9 18:32:01 app-prod01 sshd[2576]: Failed password for invalid user git from 185.220.101.4 port 51593 ssh2\nAug 9 18:32:01 app-prod01 sshd[3341]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 9 18:32:02 app-prod01 sshd[2576]: Connection closed by invalid user git 185.220.101.4 port 44124 [preauth]\nAug 9 18:37:00 app-prod01 sshd[3341]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 9 18:57:00 app-prod01 sshd[2606]: Invalid user user from 185.220.101.4 port 58306\nAug 9 18:57:01 app-prod01 sshd[2606]: Failed password for invalid user user from 185.220.101.4 port 53890 ssh2\nAug 9 18:57:02 app-prod01 sshd[2606]: Connection closed by invalid user user 185.220.101.4 port 31775 [preauth]\nAug 9 19:06:00 app-prod01 sshd[2628]: Invalid user user from 203.0.113.5 port 56233\nAug 9 19:06:01 app-prod01 sshd[2628]: Failed password for invalid user user from 203.0.113.5 port 58235 ssh2\nAug 9 19:06:02 app-prod01 sshd[2628]: Connection closed by invalid user user 203.0.113.5 port 33580 [preauth]\nAug 9 19:24:00 app-prod01 sshd[2663]: Invalid user git from 203.0.113.9 port 44700\nAug 9 19:24:01 app-prod01 sshd[2663]: Failed password for invalid user git from 203.0.113.9 port 34593 ssh2\nAug 9 19:24:02 app-prod01 sshd[2663]: Connection closed by invalid user git 203.0.113.9 port 43824 [preauth]\nAug 9 19:38:00 app-prod01 sshd[2679]: Invalid user guest from 45.33.12.20 port 58655\nAug 9 19:38:01 app-prod01 sshd[2679]: Failed password for invalid user guest from 45.33.12.20 port 32470 ssh2\nAug 9 19:38:02 app-prod01 sshd[2679]: Connection closed by invalid user guest 45.33.12.20 port 44520 [preauth]\nAug 9 19:45:00 app-prod01 sshd[3367]: Accepted publickey for admin from 10.0.5.11 port 49395 ssh2: RSA SHA256:3a4c1a0df606\nAug 9 19:45:01 app-prod01 sshd[3367]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 9 19:50:00 app-prod01 sshd[3367]: pam_unix(sshd:session): session closed for user admin\nAug 9 20:16:00 app-prod01 sshd[2714]: Invalid user test from 203.0.113.5 port 57394\nAug 9 20:16:01 app-prod01 sshd[2714]: Failed password for invalid user test from 203.0.113.5 port 30483 ssh2\nAug 9 20:16:02 app-prod01 sshd[2714]: Connection closed by invalid user test 203.0.113.5 port 33056 [preauth]\nAug 9 20:34:00 app-prod01 sshd[2746]: Invalid user user from 203.0.113.9 port 45773\nAug 9 20:34:01 app-prod01 sshd[2746]: Failed password for invalid user user from 203.0.113.9 port 37004 ssh2\nAug 9 20:34:02 app-prod01 sshd[2746]: Connection closed by invalid user user 203.0.113.9 port 58332 [preauth]\nAug 9 20:43:00 app-prod01 sshd[3373]: Accepted publickey for backup_svc from 10.0.8.5 port 45411 ssh2: RSA SHA256:a29f46469dac\nAug 9 20:43:01 app-prod01 sshd[3373]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 9 20:48:00 app-prod01 sshd[3373]: pam_unix(sshd:session): session closed for user backup_svc\nAug 9 21:02:00 app-prod01 sshd[2771]: Invalid user ubuntu from 203.0.113.5 port 30070\nAug 9 21:02:01 app-prod01 sshd[2771]: Failed password for invalid user ubuntu from 203.0.113.5 port 42793 ssh2\nAug 9 21:02:02 app-prod01 sshd[2771]: Connection closed by invalid user ubuntu 203.0.113.5 port 38690 [preauth]\nAug 9 21:34:00 app-prod01 sshd[2807]: Invalid user user from 45.33.12.20 port 51688\nAug 9 21:34:01 app-prod01 sshd[2807]: Failed password for invalid user user from 45.33.12.20 port 53540 ssh2\nAug 9 21:34:02 app-prod01 sshd[2807]: Connection closed by invalid user user 45.33.12.20 port 45947 [preauth]\nAug 9 21:46:00 app-prod01 sshd[2821]: Invalid user postgres from 203.0.113.9 port 31916\nAug 9 21:46:01 app-prod01 sshd[2821]: Failed password for invalid user postgres from 203.0.113.9 port 48978 ssh2\nAug 9 21:46:02 app-prod01 sshd[2821]: Connection closed by invalid user postgres 203.0.113.9 port 54108 [preauth]\nAug 9 21:48:00 app-prod01 sshd[3410]: Accepted publickey for admin from 10.0.5.11 port 37142 ssh2: RSA SHA256:1ef3956ce383\nAug 9 21:48:01 app-prod01 sshd[3410]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 9 21:53:00 app-prod01 sshd[3410]: pam_unix(sshd:session): session closed for user admin\nAug 9 22:23:00 app-prod01 sshd[2825]: Invalid user pi from 203.0.113.5 port 31643\nAug 9 22:23:01 app-prod01 sshd[2825]: Failed password for invalid user pi from 203.0.113.5 port 49142 ssh2\nAug 9 22:23:02 app-prod01 sshd[2825]: Connection closed by invalid user pi 203.0.113.5 port 45623 [preauth]\nAug 9 22:43:00 app-prod01 sshd[3415]: Accepted publickey for jsmith from 10.0.5.22 port 49401 ssh2: RSA SHA256:54b673b96f0f\nAug 9 22:43:01 app-prod01 sshd[3415]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 9 22:48:00 app-prod01 sshd[3415]: pam_unix(sshd:session): session closed for user jsmith\nAug 9 22:58:00 app-prod01 sshd[2829]: Invalid user ubuntu from 89.248.165.32 port 46640\nAug 9 22:58:01 app-prod01 sshd[2829]: Failed password for invalid user ubuntu from 89.248.165.32 port 32625 ssh2\nAug 9 22:58:02 app-prod01 sshd[2829]: Connection closed by invalid user ubuntu 89.248.165.32 port 57896 [preauth]\nAug 9 23:12:00 app-prod01 sshd[2834]: Invalid user hadoop from 203.0.113.5 port 52125\nAug 9 23:12:01 app-prod01 sshd[2834]: Failed password for invalid user hadoop from 203.0.113.5 port 58240 ssh2\nAug 9 23:12:02 app-prod01 sshd[2834]: Connection closed by invalid user hadoop 203.0.113.5 port 37707 [preauth]\nAug 9 23:40:00 app-prod01 sshd[2850]: Invalid user hadoop from 203.0.113.5 port 48970\nAug 9 23:40:01 app-prod01 sshd[2850]: Failed password for invalid user hadoop from 203.0.113.5 port 49481 ssh2\nAug 9 23:40:02 app-prod01 sshd[2850]: Connection closed by invalid user hadoop 203.0.113.5 port 31302 [preauth]\nAug 9 23:48:00 app-prod01 sshd[2887]: Invalid user hadoop from 185.220.101.4 port 47130\nAug 9 23:48:01 app-prod01 sshd[2887]: Failed password for invalid user hadoop from 185.220.101.4 port 40366 ssh2\nAug 9 23:48:02 app-prod01 sshd[2887]: Connection closed by invalid user hadoop 185.220.101.4 port 38544 [preauth]\nAug 10 00:04:00 app-prod01 sshd[2903]: Invalid user pi from 141.98.10.55 port 38703\nAug 10 00:04:01 app-prod01 sshd[2903]: Failed password for invalid user pi from 141.98.10.55 port 42969 ssh2\nAug 10 00:04:02 app-prod01 sshd[2903]: Connection closed by invalid user pi 141.98.10.55 port 34288 [preauth]\nAug 10 00:10:00 app-prod01 sshd[3416]: Accepted publickey for backup_svc from 10.0.8.5 port 57838 ssh2: RSA SHA256:010f81cc2438\nAug 10 00:10:01 app-prod01 sshd[3416]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 10 00:15:00 app-prod01 sshd[3416]: pam_unix(sshd:session): session closed for user backup_svc\nAug 10 00:26:00 app-prod01 sshd[2908]: Invalid user pi from 185.220.101.4 port 30305\nAug 10 00:26:01 app-prod01 sshd[2908]: Failed password for invalid user pi from 185.220.101.4 port 45017 ssh2\nAug 10 00:26:02 app-prod01 sshd[2908]: Connection closed by invalid user pi 185.220.101.4 port 50354 [preauth]\nAug 10 01:05:00 app-prod01 sshd[2943]: Invalid user oracle from 203.0.113.5 port 36984\nAug 10 01:05:01 app-prod01 sshd[2943]: Failed password for invalid user oracle from 203.0.113.5 port 46576 ssh2\nAug 10 01:05:02 app-prod01 sshd[2943]: Connection closed by invalid user oracle 203.0.113.5 port 38690 [preauth]\nAug 10 01:16:00 app-prod01 sshd[2959]: Invalid user oracle from 45.33.12.20 port 42108\nAug 10 01:16:00 app-prod01 sshd[3444]: Accepted publickey for mysql_bkp from 10.0.8.5 port 57057 ssh2: RSA SHA256:5e77b8d130a7\nAug 10 01:16:01 app-prod01 sshd[2959]: Failed password for invalid user oracle from 45.33.12.20 port 39338 ssh2\nAug 10 01:16:01 app-prod01 sshd[3444]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 10 01:16:02 app-prod01 sshd[2959]: Connection closed by invalid user oracle 45.33.12.20 port 35169 [preauth]\nAug 10 01:21:00 app-prod01 sshd[3444]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 10 01:47:00 app-prod01 sshd[2999]: Invalid user postgres from 89.248.165.32 port 56447\nAug 10 01:47:01 app-prod01 sshd[2999]: Failed password for invalid user postgres from 89.248.165.32 port 51429 ssh2\nAug 10 01:47:02 app-prod01 sshd[2999]: Connection closed by invalid user postgres 89.248.165.32 port 47332 [preauth]\nAug 10 02:23:00 app-prod01 sshd[3467]: Accepted publickey for jsmith from 10.0.5.22 port 56143 ssh2: RSA SHA256:ee3822dd02d1\nAug 10 02:23:01 app-prod01 sshd[3467]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 10 02:28:00 app-prod01 sshd[3467]: pam_unix(sshd:session): session closed for user jsmith\nAug 10 03:14:22 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51000 ssh2\nAug 10 03:14:41 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51001 ssh2\nAug 10 03:15:02 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51002 ssh2\nAug 10 03:15:16 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51003 ssh2\nAug 10 03:15:31 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51004 ssh2\nAug 10 03:15:50 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51005 ssh2\nAug 10 03:16:12 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51006 ssh2\nAug 10 03:16:28 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51007 ssh2\nAug 10 03:16:47 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51008 ssh2\nAug 10 03:17:03 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51009 ssh2\nAug 10 03:17:25 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51010 ssh2\nAug 10 03:17:37 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51011 ssh2\nAug 10 03:18:01 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51012 ssh2\nAug 10 03:18:20 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51013 ssh2\nAug 10 03:18:36 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51014 ssh2\nAug 10 03:18:58 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51015 ssh2\nAug 10 03:19:18 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51016 ssh2\nAug 10 03:19:32 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51017 ssh2\nAug 10 03:19:45 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51018 ssh2\nAug 10 03:20:04 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51019 ssh2\nAug 10 03:20:21 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51020 ssh2\nAug 10 03:20:42 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51021 ssh2\nAug 10 03:20:58 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51022 ssh2\nAug 10 03:21:20 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51023 ssh2\nAug 10 03:21:38 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51024 ssh2\nAug 10 03:22:01 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51025 ssh2\nAug 10 03:22:17 app-prod01 sshd[3941]: Failed password for deploy from 198.51.100.77 port 51026 ssh2\nAug 10 03:22:44 app-prod01 sshd[3941]: Accepted password for deploy from 198.51.100.77 port 51290 ssh2\nAug 10 03:22:45 app-prod01 sshd[3941]: pam_unix(sshd:session): session opened for user deploy by (uid=0)\nAug 10 03:23:29 app-prod01 sudo:      deploy : TTY=pts/3 ; PWD=/home/deploy ; USER=root ; COMMAND=/bin/bash\nAug 10 03:23:59 app-prod01 sudo:      deploy : TTY=pts/3 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/tee -a /root/.ssh/authorized_keys\nAug 10 03:29:59 app-prod01 sshd[3941]: pam_unix(sshd:session): session closed for user deploy\nAug 10 03:30:00 app-prod01 sshd[3469]: Accepted publickey for mysql_bkp from 10.0.8.5 port 33049 ssh2: RSA SHA256:e0d4f2f92f1e\nAug 10 03:30:01 app-prod01 sshd[3469]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 10 03:35:00 app-prod01 sshd[3469]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 10 03:50:00 app-prod01 sshd[3490]: Accepted publickey for jsmith from 10.0.5.22 port 33917 ssh2: RSA SHA256:595d5e36397e\nAug 10 03:50:01 app-prod01 sshd[3490]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 10 03:55:00 app-prod01 sshd[3490]: pam_unix(sshd:session): session closed for user jsmith\nAug 10 04:17:00 app-prod01 sshd[3491]: Accepted publickey for backup_svc from 10.0.8.5 port 53200 ssh2: RSA SHA256:2e925c717311\nAug 10 04:17:01 app-prod01 sshd[3491]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 10 04:22:00 app-prod01 sshd[3491]: pam_unix(sshd:session): session closed for user backup_svc\nAug 10 04:28:00 app-prod01 sshd[3522]: Accepted publickey for backup_svc from 10.0.8.5 port 33738 ssh2: RSA SHA256:70b4ac3e9b63\nAug 10 04:28:01 app-prod01 sshd[3522]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 10 04:33:00 app-prod01 sshd[3522]: pam_unix(sshd:session): session closed for user backup_svc\nAug 10 05:52:00 app-prod01 sshd[3556]: Accepted publickey for jsmith from 10.0.5.22 port 42464 ssh2: RSA SHA256:1179e3359dd4\nAug 10 05:52:01 app-prod01 sshd[3556]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 10 05:57:00 app-prod01 sshd[3556]: pam_unix(sshd:session): session closed for user jsmith\nAug 10 06:27:00 app-prod01 sshd[3592]: Accepted publickey for jsmith from 10.0.5.22 port 32459 ssh2: RSA SHA256:c051aee7bde6\nAug 10 06:27:01 app-prod01 sshd[3592]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 10 06:32:00 app-prod01 sshd[3592]: pam_unix(sshd:session): session closed for user jsmith\nAug 10 07:56:00 app-prod01 sshd[3620]: Accepted publickey for jsmith from 10.0.5.22 port 33760 ssh2: RSA SHA256:2487bce53eb5\nAug 10 07:56:01 app-prod01 sshd[3620]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 10 08:01:00 app-prod01 sshd[3620]: pam_unix(sshd:session): session closed for user jsmith\nAug 10 08:52:00 app-prod01 sshd[3653]: Accepted publickey for backup_svc from 10.0.8.5 port 47694 ssh2: RSA SHA256:1ba0feb97399\nAug 10 08:52:01 app-prod01 sshd[3653]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 10 08:57:00 app-prod01 sshd[3653]: pam_unix(sshd:session): session closed for user backup_svc\nAug 10 09:31:00 app-prod01 sshd[3656]: Accepted publickey for svc_report from 10.0.8.5 port 55005 ssh2: RSA SHA256:6148c341bff4\nAug 10 09:31:01 app-prod01 sshd[3656]: pam_unix(sshd:session): session opened for user svc_report by (uid=0)\nAug 10 09:36:00 app-prod01 sshd[3656]: pam_unix(sshd:session): session closed for user svc_report\nAug 10 09:56:00 app-prod01 sshd[3683]: Accepted publickey for backup_svc from 10.0.8.5 port 52730 ssh2: RSA SHA256:1406abeb677a\nAug 10 09:56:01 app-prod01 sshd[3683]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)\nAug 10 10:01:00 app-prod01 sshd[3683]: pam_unix(sshd:session): session closed for user backup_svc\nAug 10 11:10:00 app-prod01 sshd[3710]: Accepted publickey for mysql_bkp from 10.0.8.5 port 31776 ssh2: RSA SHA256:df646d2815b9\nAug 10 11:10:01 app-prod01 sshd[3710]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 10 11:15:00 app-prod01 sshd[3710]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 10 11:45:00 app-prod01 sshd[3730]: Accepted publickey for jsmith from 10.0.5.22 port 48049 ssh2: RSA SHA256:a0d7b94c8e50\nAug 10 11:45:01 app-prod01 sshd[3730]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 10 11:50:00 app-prod01 sshd[3730]: pam_unix(sshd:session): session closed for user jsmith\nAug 10 12:50:00 app-prod01 sshd[3760]: Accepted publickey for jsmith from 10.0.5.22 port 48063 ssh2: RSA SHA256:cd35cb67f6ea\nAug 10 12:50:01 app-prod01 sshd[3760]: pam_unix(sshd:session): session opened for user jsmith by (uid=0)\nAug 10 12:55:00 app-prod01 sshd[3760]: pam_unix(sshd:session): session closed for user jsmith\nAug 10 13:33:00 app-prod01 sshd[3798]: Accepted publickey for svc_report from 10.0.8.5 port 51624 ssh2: RSA SHA256:1c2f221fd53d\nAug 10 13:33:01 app-prod01 sshd[3798]: pam_unix(sshd:session): session opened for user svc_report by (uid=0)\nAug 10 13:38:00 app-prod01 sshd[3798]: pam_unix(sshd:session): session closed for user svc_report\nAug 10 14:02:05 app-prod01 sshd[3961]: Accepted password for deploy from 198.51.100.77 port 55210 ssh2\nAug 10 14:02:06 app-prod01 sshd[3961]: pam_unix(sshd:session): session opened for user deploy by (uid=0)\nAug 10 14:05:05 app-prod01 sshd[3961]: pam_unix(sshd:session): session closed for user deploy\nAug 10 14:30:00 app-prod01 sshd[3819]: Accepted publickey for admin from 10.0.5.11 port 54402 ssh2: RSA SHA256:180964c9c9fb\nAug 10 14:30:01 app-prod01 sshd[3819]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 10 14:35:00 app-prod01 sshd[3819]: pam_unix(sshd:session): session closed for user admin\nAug 10 15:17:00 app-prod01 sshd[3968]: Invalid user guest from 185.220.101.4 port 37772\nAug 10 15:17:00 app-prod01 sshd[3968]: Failed password for invalid user guest from 185.220.101.4 port 42496 ssh2\nAug 10 15:31:00 app-prod01 sshd[3853]: Accepted publickey for admin from 10.0.5.11 port 59833 ssh2: RSA SHA256:1504c19f5477\nAug 10 15:31:01 app-prod01 sshd[3853]: pam_unix(sshd:session): session opened for user admin by (uid=0)\nAug 10 15:36:00 app-prod01 sshd[3853]: pam_unix(sshd:session): session closed for user admin\nAug 10 15:58:00 app-prod01 sshd[3987]: Invalid user hadoop from 45.33.12.20 port 52913\nAug 10 15:58:00 app-prod01 sshd[3987]: Failed password for invalid user hadoop from 45.33.12.20 port 39674 ssh2\nAug 10 16:04:00 app-prod01 sshd[4005]: Invalid user user from 141.98.10.55 port 30265\nAug 10 16:04:00 app-prod01 sshd[4005]: Failed password for invalid user user from 141.98.10.55 port 48544 ssh2\nAug 10 16:44:00 app-prod01 sshd[3874]: Accepted publickey for mysql_bkp from 10.0.8.5 port 50538 ssh2: RSA SHA256:567ab48950b4\nAug 10 16:44:01 app-prod01 sshd[3874]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 10 16:49:00 app-prod01 sshd[3874]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 10 17:01:00 app-prod01 sshd[3885]: Accepted publickey for mysql_bkp from 10.0.8.5 port 52741 ssh2: RSA SHA256:eafaf0d04cc3\nAug 10 17:01:01 app-prod01 sshd[3885]: pam_unix(sshd:session): session opened for user mysql_bkp by (uid=0)\nAug 10 17:04:00 app-prod01 sshd[4044]: Invalid user test from 141.98.10.55 port 54417\nAug 10 17:04:00 app-prod01 sshd[4044]: Failed password for invalid user test from 141.98.10.55 port 46276 ssh2\nAug 10 17:06:00 app-prod01 sshd[3885]: pam_unix(sshd:session): session closed for user mysql_bkp\nAug 10 18:02:00 app-prod01 sshd[4083]: Invalid user git from 45.33.12.20 port 56277\nAug 10 18:02:00 app-prod01 sshd[4083]: Failed password for invalid user git from 45.33.12.20 port 41544 ssh2\nAug 10 18:21:00 app-prod01 sshd[4123]: Invalid user git from 141.98.10.55 port 38212\nAug 10 18:21:00 app-prod01 sshd[4123]: Failed password for invalid user git from 141.98.10.55 port 52208 ssh2\nAug 10 19:14:00 app-prod01 sshd[4130]: Invalid user ubuntu from 141.98.10.55 port 59602\nAug 10 19:14:00 app-prod01 sshd[4130]: Failed password for invalid user ubuntu from 141.98.10.55 port 50560 ssh2\nAug 10 20:00:00 app-prod01 sshd[4159]: Invalid user postgres from 203.0.113.5 port 31093\nAug 10 20:00:00 app-prod01 sshd[4159]: Failed password for invalid user postgres from 203.0.113.5 port 48991 ssh2\nAug 10 20:28:00 app-prod01 sshd[4165]: Invalid user ubuntu from 141.98.10.55 port 59806\nAug 10 20:28:00 app-prod01 sshd[4165]: Failed password for invalid user ubuntu from 141.98.10.55 port 39670 ssh2\nAug 10 20:53:00 app-prod01 sshd[4177]: Invalid user user from 141.98.10.55 port 36579\nAug 10 20:53:00 app-prod01 sshd[4177]: Failed password for invalid user user from 141.98.10.55 port 34330 ssh2\nAug 10 21:48:00 app-prod01 sshd[4211]: Invalid user pi from 89.248.165.32 port 46442\nAug 10 21:48:00 app-prod01 sshd[4211]: Failed password for invalid user pi from 89.248.165.32 port 59933 ssh2\nAug 10 22:10:00 app-prod01 sshd[4242]: Invalid user postgres from 203.0.113.9 port 56427\nAug 10 22:10:00 app-prod01 sshd[4242]: Failed password for invalid user postgres from 203.0.113.9 port 39671 ssh2\nAug 10 23:02:00 app-prod01 sshd[4272]: Invalid user oracle from 45.33.12.20 port 32467\nAug 10 23:02:00 app-prod01 sshd[4272]: Failed password for invalid user oracle from 45.33.12.20 port 34612 ssh2\nAug 10 23:55:00 app-prod01 sshd[4308]: Invalid user user from 203.0.113.9 port 41985\nAug 10 23:55:00 app-prod01 sshd[4308]: Failed password for invalid user user from 203.0.113.9 port 32959 ssh2\nAug 11 00:50:00 app-prod01 sshd[4325]: Invalid user test from 185.220.101.4 port 47582\nAug 11 00:50:00 app-prod01 sshd[4325]: Failed password for invalid user test from 185.220.101.4 port 34049 ssh2\nAug 11 01:24:00 app-prod01 sshd[4363]: Invalid user postgres from 45.33.12.20 port 42485\nAug 11 01:24:00 app-prod01 sshd[4363]: Failed password for invalid user postgres from 45.33.12.20 port 56948 ssh2\nAug 11 02:09:00 app-prod01 sshd[4378]: Invalid user oracle from 45.33.12.20 port 45449\nAug 11 02:09:00 app-prod01 sshd[4378]: Failed password for invalid user oracle from 45.33.12.20 port 30820 ssh2\nAug 11 02:53:00 app-prod01 sshd[4418]: Invalid user pi from 89.248.165.32 port 37253\nAug 11 02:53:00 app-prod01 sshd[4418]: Failed password for invalid user pi from 89.248.165.32 port 51222 ssh2\nAug 11 03:02:00 app-prod01 sshd[4438]: Invalid user guest from 141.98.10.55 port 51274\nAug 11 03:02:00 app-prod01 sshd[4438]: Failed password for invalid user guest from 141.98.10.55 port 43379 ssh2\nAug 11 03:14:00 app-prod01 sshd[4441]: Invalid user test from 203.0.113.9 port 39973\nAug 11 03:14:00 app-prod01 sshd[4441]: Failed password for invalid user test from 203.0.113.9 port 46142 ssh2\nAug 11 07:17:00 app-prod01 sshd[4457]: Accepted publickey for admin from 10.0.5.11 port 59073 ssh2: RSA SHA256:20f952358473\nAug 11 07:44:00 app-prod01 sshd[4481]: Accepted publickey for admin from 10.0.5.11 port 37119 ssh2: RSA SHA256:197b429f0db7\nAug 11 08:23:00 app-prod01 sshd[4495]: Accepted publickey for admin from 10.0.5.11 port 51027 ssh2: RSA SHA256:49af96d7237d\nAug 11 09:22:00 app-prod01 sshd[4534]: Accepted publickey for jsmith from 10.0.5.22 port 30092 ssh2: RSA SHA256:e9926b7cf63a\nAug 11 09:48:00 app-prod01 sshd[4543]: Accepted publickey for admin from 10.0.5.11 port 54304 ssh2: RSA SHA256:0bb1f31d3584\nAug 11 10:17:00 app-prod01 sshd[4545]: Accepted publickey for mysql_bkp from 10.0.8.5 port 31993 ssh2: RSA SHA256:970b518fcc33\nAug 11 11:12:00 app-prod01 sshd[4570]: Accepted publickey for backup_svc from 10.0.8.5 port 49575 ssh2: RSA SHA256:213b57465d1d\nAug 11 11:43:00 app-prod01 sshd[4596]: Accepted publickey for mysql_bkp from 10.0.8.5 port 43631 ssh2: RSA SHA256:5ffe941bb05f\nAug 11 12:01:00 app-prod01 sshd[4600]: Accepted publickey for svc_report from 10.0.8.5 port 49217 ssh2: RSA SHA256:92407908aeeb\nAug 11 12:43:00 app-prod01 sshd[4610]: Accepted publickey for jsmith from 10.0.5.22 port 51519 ssh2: RSA SHA256:17f2bed02634\nAug 11 13:28:00 app-prod01 sshd[4649]: Accepted publickey for admin from 10.0.5.11 port 51555 ssh2: RSA SHA256:7ec5efa730c4\nAug 11 13:39:00 app-prod01 sshd[4683]: Accepted publickey for admin from 10.0.5.11 port 37049 ssh2: RSA SHA256:01cef938c6ab\nAug 11 14:17:00 app-prod01 sshd[4715]: Accepted publickey for mysql_bkp from 10.0.8.5 port 49892 ssh2: RSA SHA256:1e6b0e414a03\nAug 11 14:27:00 app-prod01 sshd[4735]: Accepted publickey for jsmith from 10.0.5.22 port 36921 ssh2: RSA SHA256:66eb10c2d24f\nAug 11 15:02:00 app-prod01 sshd[4763]: Accepted publickey for admin from 10.0.5.11 port 30614 ssh2: RSA SHA256:1bf004e09c91\n", "syslog": "Aug 9 06:54:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 9 07:09:00 app-prod01 systemd[1]: Failed to start unattended-upgrades.service - restart scheduled.\nAug 9 08:13:00 app-prod01 CRON[4779]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 9 08:50:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 09:25:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 09:40:00 app-prod01 systemd[1]: Failed to start unattended-upgrades.service - restart scheduled.\nAug 9 10:45:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 9 11:42:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 9 12:06:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 9 13:05:00 app-prod01 systemd[1]: Started Daily apt download activities.\nAug 9 13:19:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 14:09:00 app-prod01 CRON[4813]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 9 14:51:00 app-prod01 systemd[1]: Started Daily apt download activities.\nAug 9 15:58:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 9 16:30:00 app-prod01 systemd[1]: Started Daily apt download activities.\nAug 9 16:55:00 app-prod01 CRON[4823]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 9 17:21:00 app-prod01 systemd[1]: Started Daily apt download activities.\nAug 9 17:40:00 app-prod01 sudo: pam_unix(sudo:auth): authentication failure; logname=admin uid=1001 euid=0 user=admin\nAug 9 17:40:20 app-prod01 sudo: admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/apt update\nAug 9 17:42:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 18:01:00 app-prod01 CRON[4835]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 9 19:11:00 app-prod01 systemd[1]: Failed to start unattended-upgrades.service - restart scheduled.\nAug 9 19:50:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 20:48:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 21:26:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 22:17:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 9 22:47:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 9 23:06:00 app-prod01 systemd[1]: Failed to start unattended-upgrades.service - restart scheduled.\nAug 9 23:20:00 app-prod01 systemd[1]: Failed to start unattended-upgrades.service - restart scheduled.\nAug 9 23:58:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 10 00:58:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 10 01:45:00 app-prod01 CRON[4858]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 10 02:27:00 app-prod01 CRON[4878]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 10 03:06:00 app-prod01 systemd[1]: Failed to start unattended-upgrades.service - restart scheduled.\nAug 10 03:18:00 app-prod01 CRON[4902]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 10 04:21:00 app-prod01 networkd-dispatcher[900]: WARNING:root:Unknown index 3 seen, reloading interface list\nAug 10 04:35:00 app-prod01 CRON[4942]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 10 05:23:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 10 05:57:00 app-prod01 systemd[1]: Failed to start unattended-upgrades.service - restart scheduled.\nAug 10 06:44:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\nAug 10 07:44:00 app-prod01 CRON[4971]: (root) CMD (/usr/local/bin/healthcheck.sh)\nAug 10 08:52:00 app-prod01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.0.1.20 PROTO=TCP\n", "application.log": "Aug 9 06:46:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.45\nAug 9 07:23:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.44\nAug 9 07:34:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=carla@novatech.com ip=10.0.5.32\nAug 9 08:11:00 app-prod01 auth_service[3312]: WARN login authentication Failed user=bob@novatech.com ip=10.0.5.52 reason=invalid_password\nAug 9 08:44:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=d.lee@novatech.com ip=10.0.5.49\nAug 9 08:59:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=carla@novatech.com ip=10.0.5.39\nAug 9 09:28:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=d.lee@novatech.com ip=10.0.5.51\nAug 9 10:11:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=alice@novatech.com ip=10.0.5.50\nAug 9 10:37:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=alice@novatech.com ip=10.0.5.47\nAug 9 11:25:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=d.lee@novatech.com ip=10.0.5.53\nAug 9 12:12:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.48\nAug 9 12:59:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.39\nAug 9 13:45:00 app-prod01 auth_service[3312]: WARN login authentication Failed user=d.lee@novatech.com ip=10.0.5.52 reason=invalid_password\nAug 9 13:55:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=carla@novatech.com ip=10.0.5.50\nAug 9 14:21:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.56\nAug 9 15:09:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=alice@novatech.com ip=10.0.5.43\nAug 9 15:46:00 app-prod01 auth_service[3312]: WARN login authentication Failed user=carla@novatech.com ip=10.0.5.39 reason=invalid_password\nAug 9 16:02:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.54\nAug 9 16:38:00 app-prod01 auth_service[3312]: WARN login authentication Failed user=bob@novatech.com ip=10.0.5.34 reason=invalid_password\nAug 9 16:52:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=alice@novatech.com ip=10.0.5.55\nAug 9 17:03:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=alice@novatech.com ip=10.0.5.58\nAug 9 17:47:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.34\nAug 9 18:02:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.54\nAug 9 18:46:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.31\nAug 9 19:17:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=carla@novatech.com ip=10.0.5.37\nAug 9 19:50:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=carla@novatech.com ip=10.0.5.55\nAug 9 20:23:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.39\nAug 9 20:58:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.60\nAug 9 21:39:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=d.lee@novatech.com ip=10.0.5.39\nAug 9 22:08:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=d.lee@novatech.com ip=10.0.5.56\nAug 9 22:25:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=bob@novatech.com ip=10.0.5.31\nAug 9 23:11:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=d.lee@novatech.com ip=10.0.5.47\nAug 9 23:22:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=alice@novatech.com ip=10.0.5.54\nAug 9 23:37:00 app-prod01 auth_service[3312]: INFO login authentication succeeded user=carla@novatech.com ip=10.0.5.46\nAug 9 23:51:00 app-prod01 auth_service[3312]: WARN login authentication Failed user=d.lee@novatech.com ip=10.0.5.59 reason=invalid_password\n", "mail.log": "Aug 9 06:22:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,198.18.0.9): unknown user\nAug 9 06:22:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 06:31:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,203.0.113.44): unknown user\nAug 9 06:31:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 07:04:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,198.18.0.9): unknown user\nAug 9 07:04:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 07:27:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,203.0.113.44): unknown user\nAug 9 07:27:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 07:58:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,203.0.113.44): unknown user\nAug 9 07:58:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 08:26:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,185.220.101.7): unknown user\nAug 9 08:26:00 app-prod01 postfix/smtpd[4102]: warning: unknown[185.220.101.7]: SASL LOGIN authentication failed: authentication Failed\nAug 9 09:15:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,203.0.113.44): unknown user\nAug 9 09:15:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 09:31:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,198.18.0.9): unknown user\nAug 9 09:31:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 10:09:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,203.0.113.44): unknown user\nAug 9 10:09:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 11:05:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,198.18.0.9): unknown user\nAug 9 11:05:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 11:41:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,203.0.113.44): unknown user\nAug 9 11:41:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 11:54:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,198.18.0.9): unknown user\nAug 9 11:54:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 12:15:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,185.220.101.7): unknown user\nAug 9 12:15:00 app-prod01 postfix/smtpd[4102]: warning: unknown[185.220.101.7]: SASL LOGIN authentication failed: authentication Failed\nAug 9 13:09:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,185.220.101.7): unknown user\nAug 9 13:09:00 app-prod01 postfix/smtpd[4102]: warning: unknown[185.220.101.7]: SASL LOGIN authentication failed: authentication Failed\nAug 9 13:44:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,198.18.0.9): unknown user\nAug 9 13:44:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 14:07:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,203.0.113.44): unknown user\nAug 9 14:07:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 14:18:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,198.18.0.9): unknown user\nAug 9 14:18:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 15:06:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,198.18.0.9): unknown user\nAug 9 15:06:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 15:18:00 app-prod01 dovecot: auth-worker(21456): sql(info@novatech.com,198.18.0.9): unknown user\nAug 9 15:18:00 app-prod01 postfix/smtpd[4102]: warning: unknown[198.18.0.9]: SASL LOGIN authentication failed: authentication Failed\nAug 9 16:04:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,203.0.113.44): unknown user\nAug 9 16:04:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 16:52:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,185.220.101.7): unknown user\nAug 9 16:52:00 app-prod01 postfix/smtpd[4102]: warning: unknown[185.220.101.7]: SASL LOGIN authentication failed: authentication Failed\nAug 9 17:15:00 app-prod01 dovecot: auth-worker(21456): sql(support@novatech.com,203.0.113.44): unknown user\nAug 9 17:15:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 17:41:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,203.0.113.44): unknown user\nAug 9 17:41:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 18:28:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,203.0.113.44): unknown user\nAug 9 18:28:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\nAug 9 19:12:00 app-prod01 dovecot: auth-worker(21456): sql(sales@novatech.com,203.0.113.44): unknown user\nAug 9 19:12:00 app-prod01 postfix/smtpd[4102]: warning: unknown[203.0.113.44]: SASL LOGIN authentication failed: authentication Failed\n"};
+
+// ---------- virtual filesystem ----------
+const FS = {
+  type: 'dir',
+  name: '/',
+  children: {
+    home: { type:'dir', name:'home', children: {
+      student: { type:'dir', name:'student', children: {
+        investigation: { type:'dir', name:'investigation', children: {
+          logs: { type:'dir', name:'logs', children: {
+            'auth.log': { type:'file', name:'auth.log', content: LOG_FILES['auth.log'] },
+            'syslog': { type:'file', name:'syslog', content: LOG_FILES['syslog'] },
+            'application.log': { type:'file', name:'application.log', content: LOG_FILES['application.log'] },
+            'mail.log': { type:'file', name:'mail.log', content: LOG_FILES['mail.log'] },
+          }}
+        }}
+      }}
+    }}
+  }
+};
+const HOME = ['home','student'];
+let cwd = [...HOME]; // path segments from root
+
+function resolveNode(pathSegs){
+  let node = FS;
+  for(const seg of pathSegs){
+    if(node.type !== 'dir' || !node.children[seg]) return null;
+    node = node.children[seg];
+  }
+  return node;
+}
+function dirLabel(){
+  // ~ style label
+  const p = cwd.join('/');
+  const homeP = HOME.join('/');
+  if(p === homeP) return '~';
+  if(p.startsWith(homeP+'/')) return '~/' + p.slice(homeP.length+1);
+  return '/' + p;
+}
+function fullLabel(){ return dirLabel(); }
+
+function resolvePathArg(arg){
+  if(!arg || arg === '.') return [...cwd];
+  if(arg === '~') return [...HOME];
+  if(arg === '..') {
+    const c = [...cwd]; if(c.length>1) c.pop(); return c;
+  }
+  let segs;
+  if(arg.startsWith('/')) segs = arg.split('/').filter(Boolean);
+  else if(arg.startsWith('~/')) segs = [...HOME, ...arg.slice(2).split('/').filter(Boolean)];
+  else segs = [...cwd, ...arg.split('/').filter(Boolean)];
+  // collapse . and ..
+  const out = [];
+  for(const s of segs){
+    if(s === '.' ) continue;
+    else if(s === '..') out.pop();
+    else out.push(s);
+  }
+  return out;
+}
+
+// ---------- terminal rendering ----------
+const term = document.getElementById('term');
+const cmdInput = document.getElementById('cmdInput');
+const pathLabel = document.getElementById('pathLabel');
+const titletext = document.getElementById('titletext');
+let history = [];
+let histIdx = -1;
+
+function esc(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function printLine(html){
+  const div = document.createElement('div');
+  div.className = 'line';
+  div.innerHTML = html;
+  term.appendChild(div);
+  term.scrollTop = term.scrollHeight;
+}
+function printPromptEcho(cmdText){
+  printLine(
+    `<span class="ps-user">student</span><span class="ps-at">@</span><span class="ps-host">examvm</span><span class="ps-dollar">:</span><span class="ps-path">${esc(dirLabel())}</span><span class="ps-dollar">$</span> <span class="cmd-echo">${esc(cmdText)}</span>`
+  );
+}
+
+function updatePromptLabel(){
+  pathLabel.textContent = dirLabel();
+  titletext.textContent = `student@examvm: ${dirLabel()}`;
+}
+
+// ---------- command implementations (operate on array-of-lines "streams") ----------
+function cmd_ls(args){
+  const flags = args.filter(a=>a.startsWith('-')).join('');
+  const target = args.filter(a=>!a.startsWith('-'))[0];
+  const segs = target ? resolvePathArg(target) : cwd;
+  const node = resolveNode(segs);
+  if(!node) return {err:`ls: cannot access '${target}': No such file or directory`};
+  if(node.type === 'file') return {out:[node.name]};
+  const entries = Object.values(node.children);
+  const long = flags.includes('l') || flags.includes('a') && flags.includes('l');
+  if(flags.includes('l')){
+    const lines = entries.map(e=>{
+      const isDir = e.type==='dir';
+      const perm = isDir ? 'drwxr-xr-x' : '-rw-r--r--';
+      const size = isDir ? 4096 : (e.content ? e.content.length : 0);
+      return `${perm}  1 student student ${String(size).padStart(6)} Aug 12 09:00 ${e.name}${isDir?'/':''}`;
+    });
+    return {out: lines};
+  }
+  return {out: entries.map(e=> e.type==='dir' ? e.name+'/' : e.name)};
+}
+
+function cmd_pwd(){ return {out:['/' + cwd.join('/')]}; }
+function cmd_whoami(){ return {out:['student']}; }
+function cmd_hostname(){ return {out:['examvm']}; }
+function cmd_date(){ return {out:['Wed Aug 12 09:41:03 UTC 2026']}; }
+
+function cmd_cd(args){
+  const target = args[0];
+  if(!target || target==='~'){ cwd=[...HOME]; return {out:[]}; }
+  const segs = resolvePathArg(target);
+  const node = resolveNode(segs);
+  if(!node) return {err:`bash: cd: ${target}: No such file or directory`};
+  if(node.type !== 'dir') return {err:`bash: cd: ${target}: Not a directory`};
+  cwd = segs;
+  return {out:[]};
+}
+
+function getFileLines(fname){
+  const segs = resolvePathArg(fname);
+  const node = resolveNode(segs);
+  if(!node) return {err:`cat: ${fname}: No such file or directory`};
+  if(node.type !== 'file') return {err:`cat: ${fname}: Is a directory`};
+  return {out: node.content.split('\n').filter((l,i,arr)=> !(i===arr.length-1 && l==='')) };
+}
+
+function cmd_cat(args, stdin){
+  if(args.length===0) return stdin ? {out: stdin} : {err:'cat: missing file operand'};
+  let all = [];
+  for(const f of args){
+    const r = getFileLines(f);
+    if(r.err) return r;
+    all = all.concat(r.out);
+  }
+  return {out: all};
+}
+
+function cmd_head(args, stdin){
+  let n = 10;
+  const rest = [];
+  for(let i=0;i<args.length;i++){
+    if(args[i]==='-n'){ n = parseInt(args[++i]||'10',10); }
+    else if(/^-\d+$/.test(args[i])){ n = parseInt(args[i].slice(1),10); }
+    else rest.push(args[i]);
+  }
+  let lines;
+  if(rest.length){ const r = getFileLines(rest[0]); if(r.err) return r; lines = r.out; }
+  else lines = stdin || [];
+  return {out: lines.slice(0,n)};
+}
+function cmd_tail(args, stdin){
+  let n = 10;
+  const rest = [];
+  for(let i=0;i<args.length;i++){
+    if(args[i]==='-n'){ n = parseInt(args[++i]||'10',10); }
+    else if(/^-\d+$/.test(args[i])){ n = parseInt(args[i].slice(1),10); }
+    else rest.push(args[i]);
+  }
+  let lines;
+  if(rest.length){ const r = getFileLines(rest[0]); if(r.err) return r; lines = r.out; }
+  else lines = stdin || [];
+  return {out: n>=lines.length ? lines : lines.slice(-n)};
+}
+
+function cmd_wc(args, stdin){
+  const flags = args.filter(a=>a.startsWith('-'));
+  const files = args.filter(a=>!a.startsWith('-'));
+  let lines;
+  if(files.length){ const r = getFileLines(files[0]); if(r.err) return r; lines = r.out; }
+  else lines = stdin || [];
+  const nlines = lines.length;
+  const nwords = lines.reduce((acc,l)=> acc + (l.trim()? l.trim().split(/\s+/).length:0), 0);
+  const nchars = lines.reduce((acc,l)=> acc + l.length + 1, 0);
+  if(flags.includes('-l')) return {out:[String(nlines) + (files.length? ' '+files[0]:'')]};
+  if(flags.includes('-w')) return {out:[String(nwords) + (files.length? ' '+files[0]:'')]};
+  if(flags.includes('-c')) return {out:[String(nchars) + (files.length? ' '+files[0]:'')]};
+  return {out:[`  ${nlines}  ${nwords} ${nchars}` + (files.length? ' '+files[0]:'')]};
+}
+
+function tokenizeQuoted(str){
+  // split respecting single/double quotes
+  const out = [];
+  let cur = '', inQ = null;
+  for(let i=0;i<str.length;i++){
+    const c = str[i];
+    if(inQ){
+      if(c===inQ){ inQ=null; } else cur+=c;
+    } else if(c==='"'||c==="'"){ inQ=c; }
+    else if(/\s/.test(c)){ if(cur){out.push(cur); cur='';} }
+    else cur+=c;
+  }
+  if(cur) out.push(cur);
+  return out;
+}
+
+function cmd_grep(args, stdin){
+  let ignoreCase=false, count=false, invert=false, lineNum=false;
+  const rest = [];
+  for(const a of args){
+    if(a[0]==='-' && a.length>1 && !/^\-\d/.test(a)){
+      for(const ch of a.slice(1)){
+        if(ch==='i') ignoreCase=true;
+        else if(ch==='c') count=true;
+        else if(ch==='v') invert=true;
+        else if(ch==='n') lineNum=true;
+      }
+    } else rest.push(a);
+  }
+  if(rest.length===0) return {err:'grep: missing pattern'};
+  const pattern = rest[0];
+  const files = rest.slice(1);
+  let lines;
+  if(files.length){ const r = getFileLines(files[0]); if(r.err) return r; lines = r.out; }
+  else lines = stdin || [];
+  let re;
+  try{ re = new RegExp(pattern, ignoreCase?'i':''); }
+  catch(e){ return {err:`grep: invalid pattern`}; }
+  const matched = [];
+  lines.forEach((l,idx)=>{
+    const isMatch = re.test(l);
+    if(isMatch !== invert){
+      const prefix = lineNum ? (idx+1)+':' : '';
+      matched.push(prefix + l);
+    }
+  });
+  if(count) return {out:[String(matched.length)]};
+  return {out: matched, highlight: invert? null : pattern, highlightFlags: ignoreCase?'gi':'g'};
+}
+
+function cmd_sort(args, stdin){
+  const numeric = args.includes('-n');
+  const reverse = args.includes('-r');
+  const unique = args.includes('-u');
+  let lines = [...(stdin||[])];
+  lines.sort((a,b)=> numeric ? (parseFloat(a)||0)-(parseFloat(b)||0) : a.localeCompare(b));
+  if(reverse) lines.reverse();
+  if(unique) lines = [...new Set(lines)];
+  return {out: lines};
+}
+
+function cmd_uniq(args, stdin){
+  const count = args.includes('-c');
+  const lines = stdin || [];
+  const out = [];
+  let i=0;
+  while(i<lines.length){
+    let j=i, c=0;
+    while(j<lines.length && lines[j]===lines[i]){ j++; c++; }
+    out.push(count ? `${String(c).padStart(7)} ${lines[i]}` : lines[i]);
+    i=j;
+  }
+  return {out};
+}
+
+function cmd_awk(args, stdin){
+  // support: awk '{print $N}'  or  awk '{print $N, $M}'
+  const prog = args.join(' ');
+  const m = prog.match(/\{\s*print\s+([^}]+)\}/);
+  const lines = stdin || [];
+  if(!m) return {err:'awk: unsupported program (this simulator only supports {print $N})'};
+  const fieldsExpr = m[1].split(',').map(s=>s.trim());
+  const out = lines.map(line=>{
+    const parts = line.trim().split(/\s+/);
+    return fieldsExpr.map(fe=>{
+      if(fe==='$0') return line;
+      const fm = fe.match(/^\$(\d+)$/);
+      if(fm) return parts[parseInt(fm[1],10)-1] ?? '';
+      return fe;
+    }).join(' ');
+  });
+  return {out};
+}
+
+function cmd_cut(args, stdin){
+  const dArg = args.find(a=>a.startsWith('-d'));
+  const fArg = args.find(a=>a.startsWith('-f'));
+  const delim = dArg ? dArg.replace('-d','').replace(/['"]/g,'') || ' ' : ' ';
+  const fieldIdx = fArg ? parseInt(fArg.replace('-f',''),10) : 1;
+  const lines = stdin || [];
+  return {out: lines.map(l=> l.split(delim)[fieldIdx-1] ?? '')};
+}
+
+function cmd_echo(args){ return {out:[args.join(' ')]}; }
+function cmd_clear(){ term.innerHTML=''; return {out:null}; }
+
+const SIMPLE_CMDS = {
+  ls: cmd_ls, pwd: cmd_pwd, whoami: cmd_whoami, hostname: cmd_hostname, date: cmd_date,
+  cd: cmd_cd, cat: cmd_cat, head: cmd_head, tail: cmd_tail, wc: cmd_wc, grep: cmd_grep,
+  sort: cmd_sort, uniq: cmd_uniq, awk: cmd_awk, cut: cmd_cut, echo: cmd_echo, clear: cmd_clear,
+};
+
+function runSingle(cmdStr, stdin){
+  const tokens = tokenizeQuoted(cmdStr.trim());
+  if(tokens.length===0) return {out: stdin || []};
+  const [cmd, ...args] = tokens;
+  if(cmd === 'clear'){ return cmd_clear(); }
+  if(!(cmd in SIMPLE_CMDS)){
+    return {err: `bash: ${cmd}: command not found`};
+  }
+  if(['ls','pwd','whoami','hostname','date','cd','echo'].includes(cmd)){
+    return SIMPLE_CMDS[cmd](args);
+  }
+  return SIMPLE_CMDS[cmd](args, stdin);
+}
+
+function runPipeline(fullCmd){
+  const stages = fullCmd.split('|').map(s=>s.trim()).filter(Boolean);
+  if(stages.length===0) return {out:[]};
+  let stdin = null;
+  let result;
+  for(const stage of stages){
+    result = runSingle(stage, stdin);
+    if(result.err) return result;
+    stdin = result.out;
+  }
+  return result;
+}
+
+function highlightMatches(line, pattern, flags){
+  if(!pattern) return esc(line);
+  try{
+    const re = new RegExp('('+pattern+')', flags);
+    return esc(line).replace(new RegExp('('+pattern.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\\\\/g,'\\')+')', flags), m=>`<span class="match">${m}</span>`);
+  }catch(e){ return esc(line); }
+}
+
+function execute(raw){
+  const cmdText = raw;
+  printPromptEcho(cmdText);
+  if(!cmdText.trim()){ return; }
+  if(cmdText.trim() === 'clear'){ term.innerHTML=''; return; }
+  const result = runPipeline(cmdText);
+  updatePromptLabel();
+  if(result.err){
+    printLine(`<span class="out-err">${esc(result.err)}</span>`);
+    return;
+  }
+  if(result.out === null) return;
+  if(result.out.length === 0){ return; }
+  for(const line of result.out){
+    if(result.highlight){
+      printLine(highlightMatches(line, result.highlight, result.highlightFlags||'g'));
+    } else {
+      printLine(esc(line));
+    }
+  }
+}
+
+printLine('<span class="out-dim">Connected to examvm (Ubuntu 22.04.4 LTS). Last login: Wed Aug 12 09:40:11 2026 from 10.0.5.30</span>');
+printLine('<span class="out-dim">พิมพ์ ls, cat, grep, awk, sort, uniq, wc, head, tail, cd ฯลฯ เพื่อเริ่มวิเคราะห์</span>');
+updatePromptLabel();
+
+cmdInput.addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){
+    const val = cmdInput.value;
+    execute(val);
+    if(val.trim()){ history.push(val); }
+    histIdx = history.length;
+    cmdInput.value='';
+  } else if(e.key==='ArrowUp'){
+    if(histIdx>0){ histIdx--; cmdInput.value = history[histIdx]; setTimeout(()=>cmdInput.setSelectionRange(9999,9999),0); }
+    e.preventDefault();
+  } else if(e.key==='ArrowDown'){
+    if(histIdx<history.length-1){ histIdx++; cmdInput.value = history[histIdx]; }
+    else { histIdx = history.length; cmdInput.value=''; }
+    e.preventDefault();
+  }
+});
+document.addEventListener('click', ()=> cmdInput.focus());
+</script>
+</body>
+</html>
