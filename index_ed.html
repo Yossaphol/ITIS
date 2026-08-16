@@ -476,68 +476,8 @@ printLine('<span class="out-dim">Connected to examvm (Ubuntu 22.04.4 LTS). Last 
 printLine('<span class="out-dim">พิมพ์ ls, cat, grep, awk, sort, uniq, wc, head, tail, cd ฯลฯ เพื่อเริ่มวิเคราะห์</span>');
 updatePromptLabel();
 
-function getCompletions(partialPath){
-  // split partialPath into dir-part + prefix to complete
-  let dirArg = '', prefix = partialPath;
-  const lastSlash = partialPath.lastIndexOf('/');
-  if(lastSlash !== -1){
-    dirArg = partialPath.slice(0, lastSlash) || '/';
-    prefix = partialPath.slice(lastSlash+1);
-  }
-  const segs = dirArg ? resolvePathArg(dirArg) : [...cwd];
-  const node = resolveNode(segs);
-  if(!node || node.type !== 'dir') return {matches:[], dirArg, prefix};
-  const names = Object.values(node.children)
-    .map(e => e.type==='dir' ? e.name+'/' : e.name)
-    .filter(n => n.startsWith(prefix));
-  return {matches: names, dirArg, prefix};
-}
-
-function commonPrefix(strs){
-  if(strs.length===0) return '';
-  let p = strs[0];
-  for(const s of strs.slice(1)){
-    let i=0;
-    while(i<p.length && i<s.length && p[i]===s[i]) i++;
-    p = p.slice(0,i);
-  }
-  return p;
-}
-
-let lastTabInput = null;
-let lastTabMatches = [];
-
-function handleTab(){
-  const val = cmdInput.value;
-  const tokens = val.split(' ');
-  const lastToken = tokens[tokens.length-1];
-  const {matches, dirArg, prefix} = getCompletions(lastToken);
-  if(matches.length===0) return;
-  if(matches.length===1){
-    const completed = (dirArg ? dirArg + '/' : '') + matches[0];
-    tokens[tokens.length-1] = completed;
-    cmdInput.value = tokens.join(' ');
-    lastTabInput = null;
-  } else {
-    const cp = commonPrefix(matches);
-    if(cp && cp.length > prefix.length){
-      const completed = (dirArg ? dirArg + '/' : '') + cp;
-      tokens[tokens.length-1] = completed;
-      cmdInput.value = tokens.join(' ');
-    } else {
-      // show possible completions, like a real shell double-tab
-      printPromptEcho(val);
-      printLine(`<span class="out-dim">${matches.map(esc).join('    ')}</span>`);
-      updatePromptLabel();
-    }
-  }
-}
-
 cmdInput.addEventListener('keydown', (e)=>{
-  if(e.key==='Tab'){
-    e.preventDefault();
-    handleTab();
-  } else if(e.key==='Enter'){
+  if(e.key==='Enter'){
     const val = cmdInput.value;
     execute(val);
     if(val.trim()){ history.push(val); }
