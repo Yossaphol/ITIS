@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Practical Lab Exam: Linux Log Analysis</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Kanit:wght@300;400;500;600&display=swap');
+        
+        body {
+            font-family: 'Kanit', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .font-mono {
+            font-family: 'Fira Code', monospace;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="h-screen overflow-hidden flex flex-col">
+    <div id="root" class="h-full flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Mock Log Files Data
+        const LOG_FILES = {
+            "auth.log": `Aug 15 01:10:02 prod-app-01 sshd[1380]: Server listening on 0.0.0.0 port 22.
+Aug 15 01:12:04 prod-app-01 sshd[1402]: Failed password for invalid user admin from 192.168.1.105 port 34122 ssh2
+Aug 15 01:12:08 prod-app-01 sshd[1405]: Failed password for invalid user root from 192.168.1.105 port 34126 ssh2
+Aug 15 01:12:12 prod-app-01 sshd[1408]: Failed password for invalid user user1 from 192.168.1.105 port 34130 ssh2
+Aug 15 01:12:16 prod-app-01 sshd[1411]: Failed password for invalid user test from 192.168.1.105 port 34134 ssh2
+Aug 15 01:12:20 prod-app-01 sshd[1415]: Failed password for invalid user guest from 192.168.1.105 port 34138 ssh2
+Aug 15 01:15:30 prod-app-01 sshd[1450]: Received disconnect from 192.168.1.105 port 34138:11: Bye Bye
+Aug 15 01:45:12 prod-app-01 sshd[1602]: Failed password for invalid user support from 192.168.1.105 port 38902 ssh2
+Aug 15 01:45:16 prod-app-01 sshd[1605]: Failed password for invalid user devops from 192.168.1.105 port 38906 ssh2
+Aug 15 02:01:10 prod-app-01 sshd[1710]: Accepted password for dev_john from 10.0.1.25 port 41200 ssh2
+Aug 15 02:01:11 prod-app-01 sshd[1710]: pam_unix(sshd:session): session opened for user dev_john by (uid=0)
+Aug 15 02:14:10 prod-app-01 sshd[1820]: Failed password for ftp_admin from 203.0.113.88 port 48102 ssh2
+Aug 15 02:14:14 prod-app-01 sshd[1823]: Failed password for ftp_admin from 203.0.113.88 port 48106 ssh2
+Aug 15 02:14:18 prod-app-01 sshd[1826]: Failed password for ftp_admin from 203.0.113.88 port 48110 ssh2
+Aug 15 02:14:22 prod-app-01 sshd[1829]: Failed password for ftp_admin from 203.0.113.88 port 48114 ssh2
+Aug 15 02:15:00 prod-app-01 sshd[1850]: Received disconnect from 203.0.113.88 port 48114:11: Exceeded max authentication attempts
+Aug 15 02:30:15 prod-app-01 sshd[2010]: pam_unix(sshd:session): session closed for user dev_john
+Aug 15 02:38:10 prod-app-01 sshd[2180]: Failed password for m_developer from 198.51.100.42 port 51210 ssh2
+Aug 15 02:38:14 prod-app-01 sshd[2184]: Failed password for m_developer from 198.51.100.42 port 51214 ssh2
+Aug 15 02:38:42 prod-app-01 sshd[2204]: Accepted publickey for sarah_admin from 198.51.100.42 port 51234 ssh2: RSA SHA256:7uX9k2mN10vL8qP3
+Aug 15 02:38:45 prod-app-01 sshd[2204]: pam_unix(sshd:session): session opened for user sarah_admin by (uid=0)
+Aug 15 02:40:12 prod-app-01 sudo: sarah_admin : TTY=pts/1 ; PWD=/home/sarah_admin ; USER=root ; COMMAND=/bin/bash
+Aug 15 02:45:00 prod-app-01 sshd[2310]: Accepted password for backup_svc from 10.0.1.50 port 39200 ssh2
+Aug 15 02:45:01 prod-app-01 sshd[2310]: pam_unix(sshd:session): session opened for user backup_svc by (uid=0)
+Aug 15 02:46:15 prod-app-01 sshd[2310]: pam_unix(sshd:session): session closed for user backup_svc`,
+
+            "syslog": `Aug 15 00:00:01 prod-app-01 CRON[1001]: (root) CMD (test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily ))
+Aug 15 01:00:00 prod-app-01 rsyslogd: [origin software="rsyslogd" swVersion="8.2001.0"] restart
+Aug 15 01:12:30 prod-app-01 kernel: [ 4120.1042] [netfilter] SSH brute force attempt detected on port 22 from 192.168.1.105
+Aug 15 01:30:00 prod-app-01 systemd[1]: Starting Daily Cleanup of Temporary Directories...
+Aug 15 01:30:01 prod-app-01 systemd[1]: Finished Daily Cleanup of Temporary Directories.
+Aug 15 02:00:00 prod-app-01 CRON[1680]: (root) CMD (/usr/local/bin/check_disk.sh > /dev/null 2>&1)
+Aug 15 02:15:00 prod-app-01 fail2ban.actions[1200]: NOTICE [sshd] Ban 203.0.113.88
+Aug 15 02:15:02 prod-app-01 firewall: [BLOCK] IN=eth0 OUT= SRC=203.0.113.88 DST=10.0.1.10 PROTO=TCP SPT=48118 DPT=22 SYN
+Aug 15 02:38:45 prod-app-01 systemd[1]: Started Session 142 of user sarah_admin.
+Aug 15 02:40:12 prod-app-01 sudo: pam_unix(sudo:session): session opened for user root by sarah_admin(uid=1004)
+Aug 15 03:00:00 prod-app-01 CRON[2500]: (root) CMD (/usr/local/bin/backup_db.sh)`,
+
+            "nginx_access.log": `192.168.1.50 - - [15/Aug/2026:01:05:10 +0000] "GET /index.html HTTP/1.1" 200 4520 "-" "Mozilla/5.0"
+192.168.1.50 - - [15/Aug/2026:01:05:12 +0000] "GET /static/css/main.css HTTP/1.1" 200 12400 "-" "Mozilla/5.0"
+198.51.100.42 - - [15/Aug/2026:02:12:01 +0000] "GET /login HTTP/1.1" 200 1420 "-" "Mozilla/5.0 (X11; Linux x86_64)"
+198.51.100.42 - - [15/Aug/2026:02:15:22 +0000] "POST /api/v1/auth/login HTTP/1.1" 401 230 "http://prod-app-01/login" "Python-urllib/3.8"
+198.51.100.42 - - [15/Aug/2026:02:15:25 +0000] "POST /api/v1/auth/login HTTP/1.1" 401 230 "http://prod-app-01/login" "Python-urllib/3.8"
+198.51.100.42 - - [15/Aug/2026:02:18:10 +0000] "POST /api/v1/auth/login HTTP/1.1" 401 230 "http://prod-app-01/login" "Python-urllib/3.8"
+198.51.100.42 - - [15/Aug/2026:02:22:40 +0000] "POST /api/v1/auth/login HTTP/1.1" 401 230 "http://prod-app-01/login" "Python-urllib/3.8"
+198.51.100.42 - - [15/Aug/2026:02:32:15 +0000] "POST /api/v1/auth/login HTTP/1.1" 200 854 "http://prod-app-01/login" "Mozilla/5.0 (X11; Linux x86_64)"
+198.51.100.42 - - [15/Aug/2026:02:33:01 +0000] "GET /api/v1/admin/export_keys?user=sarah_admin HTTP/1.1" 200 4096 "http://prod-app-01/dashboard" "Mozilla/5.0 (X11; Linux x86_64)"
+10.0.1.25 - - [15/Aug/2026:02:40:00 +0000] "GET /api/v1/status HTTP/1.1" 200 120 "-" "UptimeRobot/2.0"`,
+
+            "app_auth.log": `[2026-08-15 01:00:05] [INFO] System Web Portal Authorization Engine Started (v2.4.1)
+[2026-08-15 01:05:10] [INFO] User 'dev_john' web session active.
+[2026-08-15 02:15:22] [WARN] WebAuth: Failed login attempt for username 'admin' from IP 198.51.100.42 (Invalid Password)
+[2026-08-15 02:15:25] [WARN] WebAuth: Failed login attempt for username 'sarah_admin' from IP 198.51.100.42 (Invalid Password)
+[2026-08-15 02:18:10] [WARN] WebAuth: Failed login attempt for username 'sarah_admin' from IP 198.51.100.42 (Invalid Password)
+[2026-08-15 02:22:40] [WARN] WebAuth: Failed login attempt for username 'sarah_admin' from IP 198.51.100.42 (Invalid Password)
+[2026-08-15 02:32:15] [INFO] WebAuth: User 'sarah_admin' login SUCCESSFUL from IP 198.51.100.42 via web portal. API Token generated.
+[2026-08-15 02:33:01] [AUDIT] WebAuth: User 'sarah_admin' exported SSH identity key 'backup_key.pem' from admin vault.
+[2026-08-15 02:50:00] [INFO] Session auto-timeout for user 'dev_john'`,
+
+            "vsftpd.log": `Wed Aug 15 01:45:10 2026 [pid 1501] [ftp_user] FAIL LOGIN: Client "45.33.32.156"
+Wed Aug 15 01:45:14 2026 [pid 1503] [anonymous] FAIL LOGIN: Client "45.33.32.156"
+Wed Aug 15 01:45:18 2026 [pid 1505] [admin] FAIL LOGIN: Client "45.33.32.156"
+Wed Aug 15 01:45:22 2026 [pid 1507] [root] FAIL LOGIN: Client "45.33.32.156"
+Wed Aug 15 01:45:26 2026 [pid 1509] [service] FAIL LOGIN: Client "45.33.32.156"
+Wed Aug 15 01:46:00 2026 [pid 1515] [ftp_user] FAIL LOGIN: Client "45.33.32.156"
+Wed Aug 15 02:00:10 2026 [pid 1650] [backup_mgr] OK LOGIN: Client "10.0.1.50"
+Wed Aug 15 02:05:22 2026 [pid 1650] [backup_mgr] OK DOWNLOAD: Client "10.0.1.50", "/backups/db_20260814.tar.gz", 15420114 bytes`
+        };
+
+        const SOLUTION = {
+            username: "sarah_admin",
+            attacker_ip: "198.51.100.42",
+            login_time: "02:38", // Accept 02:38, 02:38:42, 02:32, etc.
+            vector: "web" // Credential stuffing on Web -> Downloaded SSH Key -> SSH Login
+        };
+
+        function App() {
+            const [history, setHistory] = useState([
+                { type: 'system', content: '=== Linux Practical Exam Lab Environment ===' },
+                { type: 'system', content: 'Current Directory: /var/log/audit_lab/' },
+                { type: 'system', content: 'Type "help" or "ls" to start exploring.' }
+            ]);
+            const [inputVal, setInputVal] = useState('');
+            const [cmdHistory, setCmdHistory] = useState([]);
+            const [historyIdx, setHistoryIdx] = useState(-1);
+            
+            // Submission State
+            const [isSubmitOpen, setIsSubmitOpen] = useState(false);
+            const [subUsername, setSubUsername] = useState('');
+            const [subIp, setSubIp] = useState('');
+            const [subTime, setSubTime] = useState('');
+            const [subVector, setSubVector] = useState('ssh');
+            
+            // Result State
+            const [examResult, setExamResult] = useState(null);
+            
+            // Hints State
+            const [hintsUsed, setHintsUsed] = useState(0);
+            const [activeHint, setActiveHint] = useState('');
+
+            const terminalEndRef = useRef(null);
+
+            useEffect(() => {
+                terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [history]);
+
+            // Execute simulated Linux commands
+            const handleCommand = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const trimmed = inputVal.trim();
+                    if (!trimmed) return;
+
+                    // Add to command history
+                    const newCmdHist = [...cmdHistory, trimmed];
+                    setCmdHistory(newCmdHist);
+                    setHistoryIdx(newCmdHist.length);
+
+                    // Push user prompt to output
+                    const newOutput = [...history, { type: 'user', content: trimmed }];
+
+                    // Parse command
+                    processCommand(trimmed, newOutput);
+                    setInputVal('');
+                } else if (e.key === 'ArrowUp') {
+                    if (cmdHistory.length > 0 && historyIdx > 0) {
+                        const newIdx = historyIdx - 1;
+                        setHistoryIdx(newIdx);
+                        setInputVal(cmdHistory[newIdx]);
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    if (historyIdx < cmdHistory.length - 1) {
+                        const newIdx = historyIdx + 1;
+                        setHistoryIdx(newIdx);
+                        setInputVal(cmdHistory[newIdx]);
+                    } else {
+                        setHistoryIdx(cmdHistory.length);
+                        setInputVal('');
+                    }
+                }
+            };
+
+            const processCommand = (cmdStr, currentOutput) => {
+                const parts = cmdStr.split('|').map(p => p.trim());
+                const mainCmd = parts[0];
+
+                // Check for clear
+                if (mainCmd === 'clear') {
+                    setHistory([]);
+                    return;
+                }
+
+                if (mainCmd === 'help') {
+                    currentOutput.push({
+                        type: 'output',
+                        content: `Supported commands:\n - ls, ls -la, ls -l\n - cat <filename>\n - grep [options] "pattern" <filename>\n - head [-n N] <filename>\n - tail [-n N] <filename>\n - wc [-l] <filename>\n - awk '{print ...}' <filename>\n - clear\n - help`
+                    });
+                    setHistory(currentOutput);
+                    return;
+                }
+
+                if (mainCmd.startsWith('ls') || mainCmd === 'dir') {
+                    currentOutput.push({
+                        type: 'output',
+                        content: Object.keys(LOG_FILES).join('   ')
+                    });
+                    setHistory(currentOutput);
+                    return;
+                }
+
+                if (mainCmd === 'pwd') {
+                    currentOutput.push({ type: 'output', content: '/var/log/audit_lab' });
+                    setHistory(currentOutput);
+                    return;
+                }
+
+                // Handle basic file commands
+                let outputResult = executePipeline(parts);
+                currentOutput.push({ type: 'output', content: outputResult });
+                setHistory(currentOutput);
+            };
+
+            const executePipeline = (pipelineParts) => {
+                let currentLines = [];
+                let firstCmd = pipelineParts[0];
+
+                // Parse initial command (cat, grep, head, tail, wc)
+                const tokens = parseArgs(firstCmd);
+                const cmd = tokens[0];
+
+                if (cmd === 'cat') {
+                    const filename = tokens[1];
+                    if (!filename) return "cat: missing file operand";
+                    if (!LOG_FILES[filename]) return `cat: ${filename}: No such file or directory`;
+                    currentLines = LOG_FILES[filename].split('\n');
+                } else if (cmd === 'grep') {
+                    let flags = [];
+                    let pattern = "";
+                    let filename = "";
+
+                    for (let i = 1; i < tokens.length; i++) {
+                        if (tokens[i].startsWith('-')) {
+                            flags.push(tokens[i]);
+                        } else if (!pattern) {
+                            pattern = tokens[i].replace(/^['"]|['"]$/g, '');
+                        } else if (!filename) {
+                            filename = tokens[i];
+                        }
+                    }
+
+                    if (!filename || !LOG_FILES[filename]) {
+                        return `grep: ${filename || 'target'}: No such file or directory`;
+                    }
+
+                    const rawLines = LOG_FILES[filename].split('\n');
+                    const isCaseInsensitive = flags.some(f => f.includes('i'));
+                    const isInvert = flags.some(f => f.includes('v'));
+
+                    currentLines = rawLines.filter(line => {
+                        let matches = isCaseInsensitive 
+                            ? line.toLowerCase().includes(pattern.toLowerCase())
+                            : line.includes(pattern);
+                        return isInvert ? !matches : matches;
+                    });
+                } else if (cmd === 'head' || cmd === 'tail') {
+                    let n = 10;
+                    let filename = "";
+                    for (let i = 1; i < tokens.length; i++) {
+                        if (tokens[i] === '-n' && tokens[i+1]) {
+                            n = parseInt(tokens[i+1]) || 10;
+                            i++;
+                        } else if (!filename) {
+                            filename = tokens[i];
+                        }
+                    }
+                    if (!filename || !LOG_FILES[filename]) return `${cmd}: ${filename}: No such file or directory`;
+                    const allLines = LOG_FILES[filename].split('\n');
+                    currentLines = cmd === 'head' ? allLines.slice(0, n) : allLines.slice(-n);
+                } else if (cmd === 'wc') {
+                    const filename = tokens[tokens.length - 1];
+                    if (!filename || !LOG_FILES[filename]) return `wc: ${filename}: No such file or directory`;
+                    const lines = LOG_FILES[filename].split('\n').length;
+                    return ` ${lines}  ${lines * 8} ${LOG_FILES[filename].length} ${filename}`;
+                } else {
+                    return `bash: ${cmd}: command not found (or unsupported in sandbox)`;
+                }
+
+                // Process subsequent pipeline stages (like | grep or | wc)
+                for (let p = 1; p < pipelineParts.length; p++) {
+                    const pipeTokens = parseArgs(pipelineParts[p]);
+                    const pipeCmd = pipeTokens[0];
+
+                    if (pipeCmd === 'grep') {
+                        let flags = [];
+                        let pattern = "";
+                        for (let i = 1; i < pipeTokens.length; i++) {
+                            if (pipeTokens[i].startsWith('-')) flags.push(pipeTokens[i]);
+                            else if (!pattern) pattern = pipeTokens[i].replace(/^['"]|['"]$/g, '');
+                        }
+                        const isCaseInsensitive = flags.some(f => f.includes('i'));
+                        const isInvert = flags.some(f => f.includes('v'));
+                        currentLines = currentLines.filter(line => {
+                            let matches = isCaseInsensitive 
+                                ? line.toLowerCase().includes(pattern.toLowerCase())
+                                : line.includes(pattern);
+                            return isInvert ? !matches : matches;
+                        });
+                    } else if (pipeCmd === 'wc') {
+                        return `${currentLines.length}`;
+                    } else if (pipeCmd === 'head') {
+                        let n = 10;
+                        if (pipeTokens[1] === '-n' && pipeTokens[2]) n = parseInt(pipeTokens[2]) || 10;
+                        currentLines = currentLines.slice(0, n);
+                    } else if (pipeCmd === 'tail') {
+                        let n = 10;
+                        if (pipeTokens[1] === '-n' && pipeTokens[2]) n = parseInt(pipeTokens[2]) || 10;
+                        currentLines = currentLines.slice(-n);
+                    }
+                }
+
+                return currentLines.join('\n');
+            };
+
+            const parseArgs = (str) => {
+                const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/g;
+                const matches = [];
+                let match;
+                while ((match = regex.exec(str)) !== null) {
+                    matches.push(match[1] || match[2] || match[0]);
+                }
+                return matches;
+            };
+
+            // Request Hint
+            const handleGetHint = () => {
+                if (hintsUsed >= 3) return;
+                const nextHint = hintsUsed + 1;
+                setHintsUsed(nextHint);
+                if (nextHint === 1) {
+                    setActiveHint("💡 Hint 1: อย่าโฟกัสเฉพาะ Failed password ใน auth.log เพราะผู้โจมตีจริงอาจลงทะเบียนผ่าน Successfully authenticated ก่อน ให้มองหาคำว่า 'Accepted' หรือดูไฟล์ Log อื่นๆ ร่วมด้วย");
+                } else if (nextHint === 2) {
+                    setActiveHint("💡 Hint 2: ตรวจสอบ app_auth.log หรือ nginx_access.log เพื่อดูว่ามีผู้ใช้คนไหนเข้าผ่านเว็บแอป แล้วดาวน์โหลด/ส่งออก SSH Key ออกไปหรือไม่");
+                } else if (nextHint === 3) {
+                    setActiveHint("💡 Hint 3: สังเกต IP 198.51.100.42 ใน app_auth.log ที่สุ่มล็อกอินเข้าเว็บจนสำเร็จบัญชี 'sarah_admin' แล้วนำ SSH Key ไปล็อกอิน SSH ใน auth.log");
+                }
+            };
+
+            // Grade Exam Submission
+            const handleGradeSubmit = (e) => {
+                e.preventDefault();
+                let score = 100;
+                let feedback = [];
+
+                const cleanUser = subUsername.trim().toLowerCase();
+                const cleanIp = subIp.trim();
+                const cleanTime = subTime.trim();
+
+                // Check Username (40 pts)
+                if (cleanUser === SOLUTION.username) {
+                    feedback.push({ pass: true, text: `[+40 คะแนน] ระบุ Account ถูกต้อง: ${SOLUTION.username}` });
+                } else {
+                    score -= 40;
+                    feedback.push({ pass: false, text: `[-40 คะแนน] ระบุ Account ผิด (คำตอบของคุณ: ${cleanUser || 'ไม่ได้ระบุ'})` });
+                }
+
+                // Check IP (30 pts)
+                if (cleanIp === SOLUTION.attacker_ip) {
+                    feedback.push({ pass: true, text: `[+30 คะแนน] ระบุ IP Address ผู้โจมตีถูกต้อง: ${SOLUTION.attacker_ip}` });
+                } else {
+                    score -= 30;
+                    feedback.push({ pass: false, text: `[-30 คะแนน] ระบุ IP Address ผิด (คำตอบของคุณ: ${cleanIp || 'ไม่ได้ระบุ'})` });
+                }
+
+                // Check Time (15 pts)
+                if (cleanTime.includes('02:38') || cleanTime.includes('02:32')) {
+                    feedback.push({ pass: true, text: `[+15 คะแนน] ช่วงเวลาล็อกอินสำเร็จถูกต้อง (~02:32 - 02:38)` });
+                } else {
+                    score -= 15;
+                    feedback.push({ pass: false, text: `[-15 คะแนน] ช่วงเวลาล็อกอินสำเร็จไม่ถูกต้อง` });
+                }
+
+                // Check Vector (15 pts)
+                if (subVector === 'web_key') {
+                    feedback.push({ pass: true, text: `[+15 คะแนน] วิเคราะห์ Attack Vector ถูกต้อง (Credential stuffing บน Web -> ขโมย SSH Key -> ล็อกอิน SSH)` });
+                } else {
+                    score -= 15;
+                    feedback.push({ pass: false, text: `[-15 คะแนน] วิเคราะห์ Attack Vector ไม่ถูกต้อง` });
+                }
+
+                // Deduct for Hints
+                const hintPenalty = hintsUsed * 10;
+                if (hintPenalty > 0) {
+                    score = Math.max(0, score - hintPenalty);
+                    feedback.push({ pass: false, text: `[-${hintPenalty} คะแนน] จากการใช้คำใบ้ไป ${hintsUsed} ครั้ง` });
+                }
+
+                setExamResult({ score, feedback });
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-slate-900 text-slate-100">
+                    {/* Header Bar */}
+                    <header className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center justify-between shadow-md">
+                        <div className="flex items-center space-x-3">
+                            <div className="bg-blue-600 p-2 rounded-lg text-white">
+                                <i data-lucide="terminal" className="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h1 className="font-semibold text-lg text-slate-100">Practical Lab: Linux Log Analysis Exam</h1>
+                                <p className="text-xs text-slate-400">Target Server: prod-app-01 | Folder: /var/log/audit_lab/</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                            <button 
+                                onClick={handleGetHint}
+                                disabled={hintsUsed >= 3}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition flex items-center gap-1 ${
+                                    hintsUsed >= 3 
+                                        ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
+                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                                }`}
+                            >
+                                <span>ขอ Hint ({hintsUsed}/3)</span>
+                            </button>
+                            <button 
+                                onClick={() => setIsSubmitOpen(true)}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs px-4 py-2 rounded-lg shadow-sm transition flex items-center gap-2"
+                            >
+                                <i data-lucide="send" className="w-4 h-4"></i>
+                                <span>ส่งคำตอบสอบ (Submit Exam)</span>
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Hint Banner */}
+                    {activeHint && (
+                        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2 text-xs text-amber-300 flex items-center justify-between">
+                            <span>{activeHint}</span>
+                            <button onClick={() => setActiveHint('')} className="text-amber-400 hover:text-amber-200">✕</button>
+                        </div>
+                    )}
+
+                    {/* Main Workspace Layout */}
+                    <div className="flex-1 flex overflow-hidden">
+                        {/* Left Panel: Scenario Info & File List */}
+                        <div className="w-80 bg-slate-800/60 border-r border-slate-700/80 p-4 flex flex-col gap-4 overflow-y-auto">
+                            {/* Scenario Box */}
+                            <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs space-y-2">
+                                <h2 className="font-semibold text-blue-400 flex items-center gap-1.5">
+                                    <span>สถานการณ์ (Scenario)</span>
+                                </h2>
+                                <p className="text-slate-300 leading-relaxed">
+                                    มีการแจ้งเตือนพฤติกรรมผิดปกติในการเชื่อมต่อระบบในช่วงดึกของวันที่ 15 สิงหาคม 2026 คุณต้องค้นหาว่า **Account ใดถูกบุกรุกสำเร็จ** และวิเคราะห์ร่องรอยการโจมตี
+                                </p>
+                            </div>
+
+                            {/* Tasks Box */}
+                            <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs space-y-2">
+                                <h2 className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                                    <span>สิ่งที่ต้องส่งอาจารย์</span>
+                                </h2>
+                                <ul className="list-disc list-inside text-slate-300 space-y-1">
+                                    <li>Compromised Username</li>
+                                    <li>IP Address ของผู้โจมตี</li>
+                                    <li>เวลาที่เข้าถึงระบบสำเร็จ</li>
+                                    <li>เส้นทางการบุกรุก (Vector)</li>
+                                </ul>
+                            </div>
+
+                            {/* Files in Folder */}
+                            <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs flex flex-col">
+                                <h2 className="font-semibold text-slate-300 mb-2 flex items-center justify-between">
+                                    <span>ไฟล์ใน /var/log/audit_lab/</span>
+                                    <span className="text-[10px] text-slate-500">5 files</span>
+                                </h2>
+                                <div className="space-y-1.5">
+                                    {Object.keys(LOG_FILES).map(fileName => (
+                                        <div key={fileName} className="bg-slate-900/60 p-2 rounded border border-slate-700/50 flex items-center justify-between text-slate-300 font-mono">
+                                            <span className="truncate">{fileName}</span>
+                                            <span className="text-[10px] text-slate-500">
+                                                {LOG_FILES[fileName].split('\n').length} lines
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Panel: Simulated Interactive Terminal */}
+                        <div className="flex-1 flex flex-col bg-slate-950 font-mono text-sm p-4 overflow-hidden">
+                            <div className="flex-1 overflow-y-auto space-y-2 pb-4">
+                                {history.map((item, idx) => (
+                                    <div key={idx} className="leading-relaxed">
+                                        {item.type === 'system' && (
+                                            <div className="text-slate-500 italic">{item.content}</div>
+                                        )}
+                                        {item.type === 'user' && (
+                                            <div className="flex items-center space-x-2 text-slate-200">
+                                                <span className="text-emerald-400 font-bold">student@prod-app-01</span>
+                                                <span className="text-slate-500">:</span>
+                                                <span className="text-blue-400 font-bold">/var/log/audit_lab</span>
+                                                <span className="text-slate-200">$ {item.content}</span>
+                                            </div>
+                                        )}
+                                        {item.type === 'output' && (
+                                            <pre className="text-slate-300 whitespace-pre-wrap pl-2 font-mono text-xs border-l-2 border-slate-800 py-1">
+                                                {item.content}
+                                            </pre>
+                                        )}
+                                    </div>
+                                ))}
+                                <div ref={terminalEndRef} />
+                            </div>
+
+                            {/* Terminal Prompt Input */}
+                            <div className="mt-2 pt-2 border-t border-slate-800 flex items-center space-x-2">
+                                <span className="text-emerald-400 font-bold text-xs">student@prod-app-01</span>
+                                <span className="text-slate-500 text-xs">:</span>
+                                <span className="text-blue-400 font-bold text-xs">/var/log/audit_lab</span>
+                                <span className="text-slate-200 text-xs">$</span>
+                                <input 
+                                    type="text"
+                                    value={inputVal}
+                                    onChange={(e) => setInputVal(e.target.value)}
+                                    onKeyDown={handleCommand}
+                                    placeholder="พิมพ์คำสั่ง Linux ที่นี่ (เช่น grep 'Accepted' auth.log)..."
+                                    className="flex-1 bg-transparent border-none outline-none text-slate-100 font-mono text-xs focus:ring-0"
+                                    autoFocus
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Submission Modal */}
+                    {isSubmitOpen && (
+                        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                            <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-slate-100">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-semibold text-slate-100">ส่งคำตอบ Practical Lab Exam</h3>
+                                    <button onClick={() => setIsSubmitOpen(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+                                </div>
+
+                                {!examResult ? (
+                                    <form onSubmit={handleGradeSubmit} className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-300 mb-1">
+                                                1. Compromised Account (Username ที่ถูกแฮกสำเร็จ)
+                                            </label>
+                                            <input 
+                                                type="text"
+                                                required
+                                                placeholder="เช่น john_doe"
+                                                value={subUsername}
+                                                onChange={(e) => setSubUsername(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-300 mb-1">
+                                                2. Attacker IP Address (IP ของผู้โจมตี)
+                                            </label>
+                                            <input 
+                                                type="text"
+                                                required
+                                                placeholder="เช่น 192.168.1.100"
+                                                value={subIp}
+                                                onChange={(e) => setSubIp(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-300 mb-1">
+                                                3. Timestamp (เวลาที่เข้าถึงระบบสำเร็จ)
+                                            </label>
+                                            <input 
+                                                type="text"
+                                                required
+                                                placeholder="เช่น 02:38:42"
+                                                value={subTime}
+                                                onChange={(e) => setSubTime(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-300 mb-1">
+                                                4. Attack Vector (ช่องทาง/วิธีการที่แฮกเกอร์ใช้)
+                                            </label>
+                                            <select 
+                                                value={subVector}
+                                                onChange={(e) => setSubVector(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                                            >
+                                                <option value="ssh_brute">SSH Direct Brute-force บนพอร์ต 22</option>
+                                                <option value="ftp_exploit">FTP Anonymous/Brute-force Exploit</option>
+                                                <option value="web_key">Credential stuffing บน Web Portal -&gt; ขโมย SSH Key -&gt; SSH Login</option>
+                                                <option value="sudo_vuln">Local Sudo Privilege Escalation Direct</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="pt-2 flex justify-end gap-2">
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setIsSubmitOpen(false)}
+                                                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-medium"
+                                            >
+                                                ยกเลิก
+                                            </button>
+                                            <button 
+                                                type="submit"
+                                                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-semibold text-white"
+                                            >
+                                                ตรวจคำตอบทันที
+                                            </button>
+                                        </div>
+                                    </form>
+                                ) : (
+                                    /* Exam Grading Report */
+                                    <div className="space-y-5">
+                                        <div className="text-center p-4 bg-slate-900 rounded-xl border border-slate-700">
+                                            <span className="text-xs text-slate-400 block uppercase tracking-wider mb-1">คะแนนที่คุณได้</span>
+                                            <span className={`text-4xl font-extrabold ${examResult.score >= 80 ? 'text-emerald-400' : examResult.score >= 50 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                                {examResult.score} / 100
+                                            </span>
+                                        </div>
+
+                                        <div className="space-y-2 text-xs">
+                                            <h4 className="font-semibold text-slate-300">ผลการตรวจวิเคราะห์:</h4>
+                                            {examResult.feedback.map((f, idx) => (
+                                                <div key={idx} className={`p-2.5 rounded-lg border flex items-start gap-2 ${
+                                                    f.pass ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                                                }`}>
+                                                    <span>{f.pass ? '✓' : '✕'}</span>
+                                                    <span>{f.text}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Full Incident Analysis Walkthrough */}
+                                        <div className="bg-slate-900 p-3 rounded-xl border border-slate-700 text-xs space-y-2">
+                                            <h4 className="font-semibold text-blue-400">เฉลยและลำดับเหตุการณ์การวิเคราะห์ (Forensic Walkthrough):</h4>
+                                            <ol className="list-decimal list-inside space-y-1 text-slate-300 leading-relaxed">
+                                                <li><strong className="text-amber-300">ตัวหลอก (Noise):</strong> `192.168.1.105` ใน `auth.log` และ `45.33.32.156` ใน `vsftpd.log` พยายาม Brute Force แต่ล้มเหลวทั้งหมด</li>
+                                                <li><strong className="text-amber-300">จุดเริ่มต้น:</strong> ใน `nginx_access.log` และ `app_auth.log` พบ IP <code className="bg-slate-800 px-1 text-amber-300">198.51.100.42</code> พยายามสุ่มรหัสเข้าเว็บแอปพลิเคชัน จนกระทั่งล็อกอินสำเร็จในบัญชี <code className="bg-slate-800 px-1 text-emerald-300">sarah_admin</code> เวลา 02:32:15</li>
+                                                <li><strong className="text-amber-300">การขโมยสิทธิ์:</strong> เวลา 02:33:01 ผู้โจมตีใช้เว็บพอร์ตัลดาวน์โหลด SSH Identity Key (<code className="bg-slate-800 px-1">backup_key.pem</code>)</li>
+                                                <li><strong className="text-amber-300">การเข้าถึงเซิร์ฟเวอร์:</strong> เวลา 02:38:42 ผู้โจมตีใช้ SSH Key นั้น เข้าสู่ระบบ SSH ด้วยบัญชี <code className="bg-slate-800 px-1 text-emerald-300">sarah_admin</code> ผ่านพอร์ต 22 ได้สำเร็จ (บันทึกใน `auth.log`)</li>
+                                            </ol>
+                                        </div>
+
+                                        <div className="flex justify-end">
+                                            <button 
+                                                onClick={() => {
+                                                    setExamResult(null);
+                                                    setIsSubmitOpen(false);
+                                                }}
+                                                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-xs font-semibold rounded-lg text-white"
+                                            >
+                                                ปิดหน้าต่าง
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+    <script>
+        // Initialize Lucide icons
+        setTimeout(() => {
+            if (window.lucide) {
+                window.lucide.createIcons();
+            }
+        }, 500);
+    </script>
+</body>
+</html>
