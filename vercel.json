@@ -5,11 +5,11 @@
       "destination": "/new.html"
     },
     {
-      "source": "/3",
+      "source": "/2",
       "destination": "/index_gemini.html"
     },
     {
-      "source": "/4",
+      "source": "/3",
       "destination": "/index_ed.html"
     }
   ]
